@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using Autodesk.Revit.DB;
 
 namespace RhinoInside.Revit.External.DB.Extensions
@@ -83,97 +82,61 @@ namespace RhinoInside.Revit.External.DB.Extensions
       return false;
     }
 
-    #region Mesh
-    public static bool TryGetLocation(this Mesh mesh, out XYZ origin, out XYZ basisX, out XYZ basisY)
-    {
-      origin = mesh.ComputeCentroid();
-      var cov = XYZExtension.ComputeCovariance(mesh.Vertices);
-
-      basisX = cov.GetPrincipalComponent(0D);
-
-      var basisZ = cov.TryGetInverse(out var inverse) ?
-                 inverse.GetPrincipalComponent(0D) :
-                 mesh.ComputeMeanNormal();
-
-      basisY = basisZ.CrossProduct(basisX).Normalize(0D);
-
-      return true;
-    }
-
     /// <summary>
-    /// Returns the Centroid of this mesh.
+    /// Retrieves a box that circumscribes the geometry object.
     /// </summary>
-    /// <remarks>
-    /// Calculates the centroid of the mesh using an approximation, with an accuracy
-    /// suitable for architectural purposes. This will correspond only with the center
-    /// of gravity if the mesh represents a homogeneous structure of a single material.
-    /// </remarks>
     /// <param name="mesh"></param>
-    /// <returns>The XYZ point of the Centroid of this mesh.</returns>
-    public static XYZ ComputeCentroid(this Mesh mesh)
+    /// <returns></returns>
+    public static bool TryGetBoundingBox(this GeometryObject geometry, out BoundingBoxXYZ bbox)
     {
-      Sum weights = default;
-      Sum centroidX = default, centroidY = default, centroidZ = default;
-      var numTriangles = mesh.NumTriangles;
-
-      for (int t = 0; t < numTriangles; ++t)
+      switch (geometry)
       {
-        var triangle = mesh.get_Triangle(t);
-        var v0 = triangle.get_Vertex(0);
-        var v1 = triangle.get_Vertex(1);
-        var v2 = triangle.get_Vertex(2);
+        case GeometryElement element:
+          bbox = element.GetBoundingBox();
+          return true;
 
-        Sum vX = default, vY = default, vZ = default;
-        vX.Add(v0.X, v1.X, v2.X);
-        vY.Add(v0.Y, v1.Y, v2.Y);
-        vZ.Add(v0.Z, v1.Z, v2.Z);
+        case GeometryInstance instance:
+          if (instance.SymbolGeometry.TryGetBoundingBox(out bbox))
+          {
+            bbox.Transform = instance.Transform;
+            return true;
+          }
+          break;
 
-        var w = (v1 - v0).CrossProduct(v2 - v0, 0D).GetLength(0D);
-        weights.Add(w);
-        w /= 3.0;
+        case Point point:
+          bbox = new BoundingBoxXYZ() { Min = point.Coord, Max = point.Coord };
+          return true;
 
-        centroidX.Add(vX.Value * w);
-        centroidY.Add(vY.Value * w);
-        centroidZ.Add(vZ.Value * w);
+        case PolyLine polyline:
+          return XYZExtension.TryGetBoundingBox(polyline.GetCoordinates(), out bbox);
+
+        case Curve curve:
+          return XYZExtension.TryGetBoundingBox(curve.Tessellate(), out bbox);
+
+        case Edge edge:
+          return XYZExtension.TryGetBoundingBox(edge.Tessellate(), out bbox);
+
+        case Face face:
+          using (var mesh = face.Triangulate())
+            return XYZExtension.TryGetBoundingBox(mesh.Vertices, out bbox);
+
+        case Solid solid:
+          if (!solid.Faces.IsEmpty)
+          {
+            bbox = solid.GetBoundingBox();
+            bbox.Min = bbox.Transform.OfPoint(bbox.Min);
+            bbox.Max = bbox.Transform.OfPoint(bbox.Max);
+            bbox.Transform = Transform.Identity;
+            return true;
+          }
+          break;
+
+        case Mesh mesh:
+          return XYZExtension.TryGetBoundingBox(mesh.Vertices, out bbox);
       }
 
-      var weightsSum = weights.Value;
-      return new XYZ(centroidX.Value / weightsSum, centroidY.Value / weightsSum, centroidZ.Value / weightsSum);
+      bbox = default;
+      return false;
     }
-
-    /// <summary>
-    /// Return the mean of all triangle normals
-    /// </summary>
-    /// <remarks>
-    /// In case the mesh is almost planar this will correspond to
-    /// a good approximation of the normal.
-    /// </remarks>
-    /// <param name="mesh"></param>
-    /// <returns>The XYZ vector of the mean normal of this mesh.</returns>
-    public static XYZ ComputeMeanNormal(this Mesh mesh)
-    {
-      if (mesh.NumTriangles < 1)
-        return XYZ.Zero;
-
-      Sum normalX = default, normalY = default, normalZ = default;
-      var numTriangles = mesh.NumTriangles;
-
-      for (int t = 0; t < numTriangles; ++t)
-      {
-        var triangle = mesh.get_Triangle(t);
-        var v0 = triangle.get_Vertex(0);
-        var v1 = triangle.get_Vertex(1);
-        var v2 = triangle.get_Vertex(2);
-
-        var normal = (v1 - v0).CrossProduct(v2 - v0, 0D);
-        normalX.Add(normal.X);
-        normalY.Add(normal.Y);
-        normalZ.Add(normal.Z);
-      }
-
-      return new XYZ(normalX.Value / numTriangles, normalY.Value / numTriangles, normalZ.Value / numTriangles);
-    }
-
-    #endregion
   }
 }

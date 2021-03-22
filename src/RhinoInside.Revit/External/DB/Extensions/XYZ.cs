@@ -245,6 +245,45 @@ namespace RhinoInside.Revit.External.DB.Extensions
     }
 
     /// <summary>
+    /// Retrieves a box that circumscribes the mesh geometry.
+    /// </summary>
+    /// <param name="mesh"></param>
+    /// <returns></returns>
+    public static bool TryGetBoundingBox(IEnumerable<XYZ> points, out BoundingBoxXYZ bbox)
+    {
+      double minX = double.PositiveInfinity, minY = double.PositiveInfinity, minZ = double.PositiveInfinity;
+      double maxX = double.NegativeInfinity, maxY = double.NegativeInfinity, maxZ = double.NegativeInfinity;
+
+      foreach (var point in points)
+      {
+        var value = point.X;
+        minX = Math.Min(minX, value);
+        maxX = Math.Max(maxX, value);
+
+        value = point.Y;
+        minY = Math.Min(minY, value);
+        maxY = Math.Max(maxY, value);
+
+        value = point.Z;
+        minZ = Math.Min(minZ, value);
+        maxZ = Math.Max(maxZ, value);
+      }
+
+      if (minX <= maxX && minY <= maxY && minZ <= maxZ)
+      {
+        bbox = new BoundingBoxXYZ()
+        {
+          Min = new XYZ(minX, minY, minZ),
+          Max = new XYZ(maxX, maxY, maxZ)
+        };
+        return true;
+      }
+
+      bbox = default;
+      return false;
+    }
+
+    /// <summary>
     /// Computes the mean point of a collection of XYZ points.
     /// </summary>
     /// <param name="points"></param>
