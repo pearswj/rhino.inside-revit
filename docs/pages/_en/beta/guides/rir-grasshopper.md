@@ -78,37 +78,35 @@ As mentioned in the sections above, paying close attention to the items below wi
 
 ## Element Tracking
 
-Element tracking is the ability for Grasshopper components to track which emements they created in a Revit document. With this information a component can avoid duplicating previously made elements in Revit. Tracking is part of the Revit PProject information so even after a Revit project has been closed and reopened, a Grasshopper defintinon will remember which componets are tracking which elements.
+Element tracking is the ability for Grasshopper components to track which elements they created in a Revit document. Tracking is part of the Revit Project information so even after a Revit project has been closed and reopened, a Grasshopper definition will remember which components are tracking which elements. With this information a component can avoid duplicating previously made elements in Revit.
 
-It is important to have some understanding how to manage Element tracking in Rhino.inside.Revit as projects move forward.
+While most of the time Element tracking will just work, it is important to understanding how to manage Element Tracking in Rhino.inside.Revit as projects move forward.
 
-Only component that create a Revit element will track an element. When created, objects are automatically tracked and pinned by the specific output of the Grasshopper component. The component will continue to activly update the Revit elemtns as long as it is tracked and pinned.  Unpining and element in Revit will temporarly pause any additional updates.  By re-pining the element, Grasshopper will continue to update the tracked element.
+Only Grasshopper components that create Revit elements will track. Each output on the Grasshopper component does the tracking for thier resulting element. The Grasshopper component will continue to actively update the Revit elements as long as they are tracked and pinned.  Unpining an element in Revit will temporarily pause any additional updates.  By re-pining the element, Grasshopper will continue to update the tracked element.
 
-Only creation components will track their elements.  Other components such as components that set parameters or modify existing elements will not track.
+Only creation components will track their elements.  Other Grasshopper components such Set parameters or modify existing elements will not track.
 
-Another important behavior is if a a Grasshopper component is deleted, the currently existing tracked elements must be deleted or *released*.  Grasshopper will prompt for the proper behavior.
+Named components such as Family definitions and Material will be tracked based on the name of the element. Just like non-named elements, a family or material can be released from Grasshopper components.
 
-Sometimes it is neccesary to *release* elements from the tracking Grasshopper component. Once released, a Revit element will no longer be controlled by Grasshopper. This can lead to the element being duplicated if the Grasshopper solution is run in the future. Even if *released* additional modify actions from components further down the defintinion will continue to make changes to the Elements. Elements can be released in two ways.
+Sometimes it is necessary to *release* elements from the tracking Grasshopper component. Once released, a Revit element will no longer be controlled by Grasshopper. This can lead to the element being duplicated if the Grasshopper solution is run in the future. Even if *released* additional modify actions from components later in the definition will continue to make changes to the Elements. Elements can be released in two ways.
 
-1. Right click on the Grasshopper component that created the elemnts and selct Release Elements.
+1. Right click on the Grasshopper component that created the elements and select Release Elements.
 2. All elements in the document can be released by selecting Release elements in the Rhino.Inside.Revit Toolbar.
 
-To be clear, un-pinning does not release and element if simply pauses any updates that would come from tracking.  Repinning the element will allow Grasshopper to control the element again.
+Another key behavior is when a Grasshopper component that is tracking is deleted. The existing tracked elements from that component must be deleted or *released*.  A Revit warning box wil be displayed when this happen to allow for proper resolution of this issue.  Here are the choices:
 
-Illustating Element tracking thru example workflows may be the best way to explain this. The following definition will create a series of Levels and Floors which are hosted on those levels:
+1. OK will leave the Elements in the Revit project but they will be released from Grasshopper. The hosted elemente (the floors in this case) are now hosted on normal Revit Levels, but Grasshopper will continue to track the floor themselves. (for instance changing the Floor Type will update those floors.)
+1. The Delete All... button will delete the released elements from the Revit project.
+1. Cancel will return the Grasshopper component to the canvas and the tracking of those elements will continue.
 
-1. With Tracking, even if the files is saved and then reopened.  The components continue to update those same elements.
-1. If the Levels component is deleted, the objects of that component and the hosted elemnt on those aobjects are highlightsed in orange.  Then there is a dialog that is presented with the warning in Revit.  Here are the choices:
-    1. OK will leave the Elements in the Revit project and but they will be released from Grasshopper. The hosted elemente (the floors in this case) are now hosted on normal Revit Levels, but Grasshopper will continue to track the floor themselves. (for instnce shanging the Fllor Type will update those floors.)
-    1. Delete All... button will delete the released elements from the Revit project.
-    1. Cancel will return the Grasshopper component to the canvas and the tracking of those elements will continue.
+While affected elements will be higlighted in orange durrin gthe Revit warning box display, the Details >> button can be used to scroll all the objects effected by the delete and specific line items can be selected to highlight the object individually.
 
-Named components such as Family defintions and Material will be tracked based on the name of the element. Just like non-named elements, a family or material can be released from Grasshopper components.
+To be clear, un-pinning does not release an element if simply pauses any updates that would come from tracking.  Repinning the element will allow Grasshopper to control the element again.
 
 There are new options on the outputs of any create component that relates to Element Tracking.  These options can be accessed by right-clicking on the specific output:
 
-1. Highlight Element This options will higlight the elements tracked by that output.
-1. Release Element... will release the elemnts to Revit and show in Orange those elements released.
+1. Highlight Element This options will highlight the elements tracked by that output.
+1. Release Element... will release the elements to Revit and show in Orange those elements released.
 1. Unpin Element will unpine the tracked elements.  This will temporarily pause tracking until those elements are re-pinned.
 1. Pin Elements will pin the tracked elements and allow Grasshopper to update those elements again.
-1. Delete Elements will delete the tracked elements coming from that output. If the deleted elements also host additional elements, those related elements will also be deleted.  The standard Revit resoolution dialogs will also appear when this happens.
+1. Delete Elements will delete the tracked elements coming from that output. If the deleted elements also host additional elements, those related elements will also be deleted.  The standard Revit resolution dialogs will also appear when this happens.
