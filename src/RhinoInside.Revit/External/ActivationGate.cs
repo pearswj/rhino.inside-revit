@@ -77,10 +77,32 @@ namespace RhinoInside.Revit.External
     /// </summary>
     public static IEnumerable<IntPtr> GateWindows => gates.Select(x => x.Key);
 
+    static WindowHandle HostMainWindow = WindowHandle.Zero;
+
+    /// <summary>
+    /// Attach Activation Gate to the Host main window.
+    /// </summary>
+    /// <param name="hWnd">HWND of the host main window.</param>
+    public static void SetHostWindow(IntPtr hWnd)
+    {
+      var window = new WindowHandle(hWnd);
+
+      if (!window.IsZero)
+      {
+        if (window.IsInvalid)
+          throw new ArgumentException("Invalid handle vale", nameof(hWnd));
+
+        if (!HostMainWindow.IsZero)
+          throw new InvalidOperationException("Failed to change host main window");
+      }
+
+      HostMainWindow = window;
+    }
+
     /// <summary>
     /// Registers a window as a Gate window.
     /// </summary>
-    /// <param name="hWnd">HWND of the window to register.</param>
+    /// <param name="hWnd">HWND of the gate window to register.</param>
     /// <returns>true on success, false on failure.</returns>
     public static bool AddGateWindow(IntPtr hWnd)
     {
@@ -172,10 +194,10 @@ namespace RhinoInside.Revit.External
       }
     }
 
-    internal static void Open(Action action, object state) =>
+    internal static void Open(Action action, object state = default) =>
       Open(() => { action.Invoke(); return System.Reflection.Missing.Value; }, state);
 
-    internal static T Open<T>(Func<T> func, object state)
+    internal static T Open<T>(Func<T> func, object state = default)
     {
       var prevState = TopState;
       var wasOpen = IsOpen;
@@ -201,8 +223,8 @@ namespace RhinoInside.Revit.External
         if (IsActive && !IsOpen)
         {
           // Return control to Revit
-          Revit.MainWindow.Enabled = true;
-          WindowHandle.ActiveWindow = Revit.MainWindow;
+          HostMainWindow.Enabled = true;
+          WindowHandle.ActiveWindow = HostMainWindow;
         }
       }
     }
@@ -218,35 +240,35 @@ namespace RhinoInside.Revit.External
       public class YieldAwaiter : UI.ExternalEventHandler, ICriticalNotifyCompletion
       {
         public readonly string Name;
-        Action action;
         ExternalEvent external;
+        Action continuation;
         UIApplication result;
 
         internal YieldAwaiter(string name)
         {
           Name = name;
-          action = default;
+          continuation = default;
           external = default;
           result = default;
         }
 
         #region Awaiter
-        public bool IsCompleted => false;
+        public bool IsCompleted => !external?.IsPending ?? false;
         public UIApplication GetResult() => result;
         #endregion
 
         #region ICriticalNotifyCompletion
         [SecuritySafeCritical]
-        void INotifyCompletion.OnCompleted(Action continuation) =>
-          Post(continuation);
+        void INotifyCompletion.OnCompleted(Action action) =>
+          Post(action);
 
         [SecuritySafeCritical]
-        void ICriticalNotifyCompletion.UnsafeOnCompleted(Action continuation) =>
-          Post(continuation);
+        void ICriticalNotifyCompletion.UnsafeOnCompleted(Action action) =>
+          Post(action);
 
-        void Post(Action continuation)
+        void Post(Action action)
         {
-          action = continuation;
+          continuation = action;
           external = ExternalEvent.Create(this);
           switch (external.Raise())
           {
@@ -264,7 +286,7 @@ namespace RhinoInside.Revit.External
         {
           result = app;
           using (external)
-            action.Invoke();
+            continuation.Invoke();
         }
 
         public override string GetName() => Name;
@@ -294,34 +316,34 @@ namespace RhinoInside.Revit.External
       public class OpenAwaiter : UI.ExternalEventHandler, ICriticalNotifyCompletion
       {
         public readonly string Name;
-        Action action;
         ExternalEvent external;
+        Action continuation;
         readonly bool result = !IsOpen;
 
         internal OpenAwaiter(string name)
         {
           Name = name;
-          action = default;
+          continuation = default;
           external = default;
         }
 
         #region Awaiter
-        public bool IsCompleted => IsOpen;
+        public bool IsCompleted => !external?.IsPending ?? IsOpen;
         public bool GetResult() => result;
         #endregion
 
         #region ICriticalNotifyCompletion
         [SecuritySafeCritical]
-        void INotifyCompletion.OnCompleted(Action continuation) =>
-          Post(continuation);
+        void INotifyCompletion.OnCompleted(Action action) =>
+          Post(action);
 
         [SecuritySafeCritical]
-        void ICriticalNotifyCompletion.UnsafeOnCompleted(Action continuation) =>
-          Post(continuation);
+        void ICriticalNotifyCompletion.UnsafeOnCompleted(Action action) =>
+          Post(action);
 
-        void Post(Action continuation)
+        void Post(Action action)
         {
-          action = continuation;
+          continuation = action;
           external = ExternalEvent.Create(this);
           switch (external.Raise())
           {
@@ -338,7 +360,7 @@ namespace RhinoInside.Revit.External
         protected override void Execute(UIApplication app)
         {
           using (external)
-            action.Invoke();
+            continuation.Invoke();
         }
 
         public override string GetName() => Name;
@@ -386,7 +408,7 @@ namespace RhinoInside.Revit.External
 
             if (IsOpen)
             {
-              if (windowToActivate == Revit.MainWindow && !windowToActivate.Enabled)
+              if (windowToActivate == HostMainWindow && !windowToActivate.Enabled)
               {
                 foreach (var gate in gates)
                 {

@@ -27,7 +27,7 @@ namespace RhinoInside.Revit.GH.Components
     protected override ParamDefinition[] Inputs => inputs;
     static readonly ParamDefinition[] inputs =
     {
-      ParamDefinition.FromParam(new Parameters.Document(), ParamVisibility.Voluntary),
+      new ParamDefinition(new Parameters.Document(), ParamRelevance.Occasional),
       ParamDefinition.Create<Parameters.Param_Enum<Types.ViewFamily>>("Family", "F", string.Empty, GH_ParamAccess.item, optional: true),
       ParamDefinition.Create<Param_String>("Name", "N", "View Type name", GH_ParamAccess.item, optional: true),
       ParamDefinition.Create<Parameters.ElementFilter>("Filter", "F", "Filter", GH_ParamAccess.item, optional: true),
@@ -60,7 +60,7 @@ namespace RhinoInside.Revit.GH.Components
         if (filter is object)
           elementCollector = elementCollector.WherePasses(filter);
 
-        if (TryGetFilterStringParam(DB.BuiltInParameter.SYMBOL_NAME_PARAM, ref name, out var nameFilter))
+        if (TryGetFilterStringParam(DB.BuiltInParameter.ALL_MODEL_TYPE_NAME, ref name, out var nameFilter))
           elementCollector = elementCollector.WherePasses(nameFilter);
 
         var elements = collector.Cast<DB.ViewFamilyType>();

@@ -9,15 +9,19 @@ using Grasshopper.Kernel.Types;
 using Rhino.Geometry;
 using RhinoInside.Revit.GH.Kernel.Attributes;
 using DB = Autodesk.Revit.DB;
-using DBXS = RhinoInside.Revit.External.DB.Schemas;
+using EDBS = RhinoInside.Revit.External.DB.Schemas;
 
 namespace RhinoInside.Revit.GH.Types
 {
-  public abstract class DataType<T> : GH_Goo<T>, IEquatable<DataType<T>>, IComparable<DataType<T>>, IComparable, IGH_QuickCast
-    where T : DBXS.DataType, new()
+  public abstract class DataType<T> : IGH_Goo,
+    IEquatable<DataType<T>>,
+    IComparable<DataType<T>>,
+    IComparable,
+    IGH_QuickCast
+    where T : EDBS.DataType, new()
   {
     protected DataType() { }
-    protected DataType(T value) : base(value) { }
+    protected DataType(T value) => Value = value;
 
     public virtual string Text
     {
@@ -29,12 +33,17 @@ namespace RhinoInside.Revit.GH.Types
       }
     }
 
-    public bool IsEmpty => Value == DBXS.DataType.Empty;
+    public T Value { get; set; }
+
+    public bool IsEmpty => Value == EDBS.DataType.Empty;
 
     #region IGH_Goo
-    public override bool IsValid => Value != default;
+    public virtual bool IsValid => Value != default;
+    public virtual string IsValidWhyNot => IsValid ? default : "Not Valid";
 
-    public override string TypeName
+    string IGH_Goo.ToString() => Value.Label;
+
+    public virtual string TypeName
     {
       get
       {
@@ -43,7 +52,7 @@ namespace RhinoInside.Revit.GH.Types
       }
     }
 
-    public override string TypeDescription
+    public virtual string TypeDescription
     {
       get
       {
@@ -52,15 +61,18 @@ namespace RhinoInside.Revit.GH.Types
       }
     }
 
-    public override IGH_Goo Duplicate() => (IGH_Goo) MemberwiseClone();
+    public IGH_Goo Duplicate() => (IGH_Goo) MemberwiseClone();
 
-    public override object ScriptVariable() => Value.FullName;
+    public virtual IGH_GooProxy EmitProxy() => default;
 
-    public override bool CastTo<Q>(ref Q target)
+    public virtual object ScriptVariable() => Value.FullName;
+
+    public virtual bool CastFrom(object source) => false;
+    public virtual bool CastTo<Q>(out Q target)
     {
       if (typeof(Q).IsAssignableFrom(typeof(GH_String)))
       {
-        target = (Q) (object) new GH_String(base.Value.TypeId);
+        target = (Q) (object) new GH_String(Value.TypeId);
         return true;
       }
 
@@ -70,10 +82,11 @@ namespace RhinoInside.Revit.GH.Types
         return true;
       }
 
-      return base.CastTo<Q>(ref target);
+      target = default;
+      return false;
     }
 
-    public override bool Write(GH_IWriter writer)
+    public virtual bool Write(GH_IWriter writer)
     {
       if(Value?.TypeId is string typeId)
         writer.SetString("string", typeId);
@@ -81,7 +94,7 @@ namespace RhinoInside.Revit.GH.Types
       return true;
     }
 
-    public override bool Read(GH_IReader reader)
+    public virtual bool Read(GH_IReader reader)
     {
       string typeId = default;
       if (reader.TryGetString("string", ref typeId))
@@ -89,12 +102,12 @@ namespace RhinoInside.Revit.GH.Types
       else
         Value = default;
 
-      return base.Read(reader);
+      return true;
     }
     #endregion
 
     #region System.Object
-    public sealed override string ToString() => $"{TypeName}: {Text}";
+    public sealed override string ToString() => Value.FullName;
     public override int GetHashCode() => Value.GetHashCode();
     #endregion
 
@@ -132,7 +145,7 @@ namespace RhinoInside.Revit.GH.Types
     }
 
     int IGH_QuickCast.QC_Hash() => Value.GetHashCode();
-    bool IGH_QuickCast.QC_Bool() => IsEmpty;
+    bool IGH_QuickCast.QC_Bool() => IsValid && !IsEmpty;
     int IGH_QuickCast.QC_Int() => throw new InvalidCastException($"{GetType().Name} cannot be cast to {nameof(Int32)}");
     double IGH_QuickCast.QC_Num() => throw new InvalidCastException($"{GetType().Name} cannot be cast to {nameof(Double)}");
     string IGH_QuickCast.QC_Text() => Value.FullName;
@@ -155,10 +168,10 @@ namespace RhinoInside.Revit.GH.Types
     Name("Unit Type"),
     Description("Contains a collection of Revit unit type values"),
   ]
-  public class UnitType : DataType<DBXS.UnitType>, IGH_Enumerate
+  public class UnitType : DataType<EDBS.UnitType>, IGH_Enumerate
   {
     public UnitType() { }
-    public UnitType(DBXS.UnitType value) : base(value) { }
+    public UnitType(EDBS.UnitType value) : base(value) { }
 
     static UnitType[] enumValues;
     public static IReadOnlyCollection<UnitType> EnumValues
@@ -167,10 +180,10 @@ namespace RhinoInside.Revit.GH.Types
       {
         if (enumValues is null)
         {
-          enumValues = typeof(DBXS.UnitType).
+          enumValues = typeof(EDBS.UnitType).
             GetProperties(BindingFlags.Public | BindingFlags.Static).
-            Where(x => x.PropertyType == typeof(DBXS.UnitType)).
-            Select(x => new UnitType((DBXS.UnitType) x.GetValue(null))).
+            Where(x => x.PropertyType == typeof(EDBS.UnitType)).
+            Select(x => new UnitType((EDBS.UnitType) x.GetValue(null))).
             OrderBy(x => x.Value.Label).
             ToArray();
         }
@@ -194,8 +207,8 @@ namespace RhinoInside.Revit.GH.Types
           case int i: Value = (DB.DisplayUnitType) i; break;
           case DB.DisplayUnitType u: Value = u; break;
 #endif
-          case DBXS.DataType s: Value = new DBXS.UnitType(s.TypeId); break;
-          case string t: Value = new DBXS.UnitType(t); break;
+          case EDBS.DataType s: Value = new EDBS.UnitType(s.TypeId); break;
+          case string t: Value = new EDBS.UnitType(t); break;
           default: return base.CastFrom(source);
         }
 
@@ -210,10 +223,10 @@ namespace RhinoInside.Revit.GH.Types
     Name("Parameter Type"),
     Description("Contains a collection of Revit parameter type values"),
   ]
-  public class ParameterType : DataType<DBXS.DataType>, IGH_Enumerate
+  public class ParameterType : DataType<EDBS.DataType>, IGH_Enumerate
   {
     public ParameterType() { }
-    public ParameterType(DBXS.DataType value) : base(value) { }
+    public ParameterType(EDBS.DataType value) : base(value) { }
 
     public override string Text
     {
@@ -222,7 +235,7 @@ namespace RhinoInside.Revit.GH.Types
         if (!IsValid) return "<invalid>";
         if (IsEmpty) return "<empty>";
 
-        if (DBXS.CategoryId.IsCategoryId(Value, out var _))
+        if (EDBS.CategoryId.IsCategoryId(Value, out var _))
           return "Family Type";
 
         return Value.Label;
@@ -237,10 +250,10 @@ namespace RhinoInside.Revit.GH.Types
       {
         if (enumValues is null)
         {
-          enumValues = typeof(DBXS.SpecType.Measurable).
+          enumValues = typeof(EDBS.SpecType.Measurable).
             GetProperties(BindingFlags.Public | BindingFlags.Static).
-            Where(x => x.PropertyType == typeof(DBXS.SpecType.Measurable)).
-            Select(x => new ParameterType((DBXS.UnitType) x.GetValue(null))).
+            Where(x => x.PropertyType == typeof(EDBS.SpecType.Measurable)).
+            Select(x => new ParameterType((EDBS.UnitType) x.GetValue(null))).
             OrderBy(x => x.Value.FullName).
             ToArray();
         }
@@ -261,12 +274,12 @@ namespace RhinoInside.Revit.GH.Types
 #if REVIT_2021
           case DB.ForgeTypeId f: Value = f; break;
 #else
-          case int i: Value = (DBXS.SpecType) (DB.ParameterType) i; break;
-          case DB.ParameterType u: Value = (DBXS.SpecType) u; break;
-          case DB.UnitType t: Value = (DBXS.SpecType) t; break;
+          case int i: Value = (EDBS.SpecType) (DB.ParameterType) i; break;
+          case DB.ParameterType u: Value = (EDBS.SpecType) u; break;
+          case DB.UnitType t: Value = (EDBS.SpecType) t; break;
 #endif
-          case DBXS.DataType s: Value = new DBXS.DataType(s.TypeId); break;
-          case string t: Value = new DBXS.SpecType(t); break;
+          case EDBS.DataType s: Value = new EDBS.DataType(s.TypeId); break;
+          case string t: Value = new EDBS.SpecType(t); break;
           default: return base.CastFrom(source);
         }
 
@@ -278,13 +291,13 @@ namespace RhinoInside.Revit.GH.Types
 
   [
     ComponentGuid("3D9979B4-65C8-447F-BCEA-3705249DF3B6"),
-    Name("Parameter Group"),
-    Description("Contains a collection of Revit parameter group values"),
+    Name("Built-In Parameter Group"),
+    Description("Contains a collection of Revit built-in parameter group values"),
   ]
-  public class ParameterGroup : DataType<DBXS.ParameterGroup>, IGH_Enumerate
+  public class ParameterGroup : DataType<EDBS.ParameterGroup>, IGH_Enumerate
   {
     public ParameterGroup() { }
-    public ParameterGroup(DBXS.ParameterGroup value) : base(value) { }
+    public ParameterGroup(EDBS.ParameterGroup value) : base(value) { }
 
     static ParameterGroup[] enumValues;
     public static IReadOnlyCollection<ParameterGroup> EnumValues
@@ -293,10 +306,10 @@ namespace RhinoInside.Revit.GH.Types
       {
         if (enumValues is null)
         {
-          enumValues = typeof(DBXS.ParameterGroup).
+          enumValues = typeof(EDBS.ParameterGroup).
             GetProperties(BindingFlags.Public | BindingFlags.Static).
-            Where(x => x.PropertyType == typeof(DBXS.ParameterGroup)).
-            Select(x => new ParameterGroup((DBXS.ParameterGroup) x.GetValue(null))).
+            Where(x => x.PropertyType == typeof(EDBS.ParameterGroup)).
+            Select(x => new ParameterGroup((EDBS.ParameterGroup) x.GetValue(null))).
             OrderBy(x => x.Value.Label).
             ToArray();
         }
@@ -321,9 +334,123 @@ namespace RhinoInside.Revit.GH.Types
           case int i: Value = (DB.BuiltInParameterGroup) i; break;
           case DB.BuiltInParameterGroup u: Value = u; break;
 #endif
-          case DBXS.ParameterGroup v: Value = v; break;
-          case DBXS.DataType s: Value = new DBXS.ParameterGroup(s.TypeId); break;
-          case string t: Value = new DBXS.ParameterGroup(t); break;
+          case EDBS.ParameterGroup v: Value = v; break;
+          case EDBS.DataType s: Value = new EDBS.ParameterGroup(s.TypeId); break;
+          case string t: Value = new EDBS.ParameterGroup(t); break;
+          default: return base.CastFrom(source);
+        }
+
+        return true;
+      }
+      catch (ArgumentException) { return false; }
+    }
+  }
+
+  [
+    ComponentGuid("BCD9B7A7-1B9F-4563-8FF4-2C7726F2DCC0"),
+    Name("Built-In Parameter"),
+    Description("Contains a collection of Revit built-in parameter values"),
+  ]
+  public class ParameterId : DataType<EDBS.ParameterId>, IGH_Enumerate
+  {
+    public ParameterId() { }
+    public ParameterId(EDBS.ParameterId value) : base(value) { }
+
+    static ParameterId[] enumValues;
+    public static IReadOnlyCollection<ParameterId> EnumValues
+    {
+      get
+      {
+        if (enumValues is null)
+        {
+          enumValues = typeof(EDBS.ParameterId).
+            GetProperties(BindingFlags.Public | BindingFlags.Static).
+            Where(x => x.PropertyType == typeof(EDBS.ParameterId)).
+            Select(x => new ParameterId((EDBS.ParameterId) x.GetValue(null))).
+            OrderBy(x => x.Value.Label).
+            ToArray();
+        }
+
+        return enumValues;
+      }
+    }
+
+    public override bool CastFrom(object source)
+    {
+      if (source is IGH_Goo goo)
+        source = goo.ScriptVariable();
+
+      try
+      {
+        switch (source)
+        {
+#if REVIT_2021
+          case DB.ForgeTypeId f: Value = f; break;
+#endif
+#if !REVIT_2022
+          case int i: Value = (DB.BuiltInParameter) i; break;
+          case DB.BuiltInParameter u: Value = u; break;
+#endif
+          case EDBS.ParameterId v: Value = v; break;
+          case EDBS.DataType s: Value = new EDBS.ParameterId(s.TypeId); break;
+          case string t: Value = new EDBS.ParameterId(t); break;
+          default: return base.CastFrom(source);
+        }
+
+        return true;
+      }
+      catch (ArgumentException) { return false; }
+    }
+  }
+
+  [
+    ComponentGuid("6FBA8F56-FDFA-4EA4-90C1-52CCB29DF32D"),
+    Name("Built-In Category"),
+    Description("Contains a collection of Revit built-in category values"),
+  ]
+  public class CategoryId : DataType<EDBS.CategoryId>, IGH_Enumerate
+  {
+    public CategoryId() { }
+    public CategoryId(EDBS.CategoryId value) : base(value) { }
+
+    static CategoryId[] enumValues;
+    public static IReadOnlyCollection<CategoryId> EnumValues
+    {
+      get
+      {
+        if (enumValues is null)
+        {
+          enumValues = typeof(EDBS.CategoryId).
+            GetProperties(BindingFlags.Public | BindingFlags.Static).
+            Where(x => x.PropertyType == typeof(EDBS.CategoryId)).
+            Select(x => new CategoryId((EDBS.CategoryId) x.GetValue(null))).
+            OrderBy(x => x.Value.Label).
+            ToArray();
+        }
+
+        return enumValues;
+      }
+    }
+
+    public override bool CastFrom(object source)
+    {
+      if (source is IGH_Goo goo)
+        source = goo.ScriptVariable();
+
+      try
+      {
+        switch (source)
+        {
+#if REVIT_2021
+          case DB.ForgeTypeId f: Value = f; break;
+#endif
+#if !REVIT_2022
+          case int i: Value = (DB.BuiltInCategory) i; break;
+          case DB.BuiltInCategory u: Value = u; break;
+#endif
+          case EDBS.CategoryId v: Value = v; break;
+          case EDBS.DataType s: Value = new EDBS.CategoryId(s.TypeId); break;
+          case string t: Value = new EDBS.CategoryId(t); break;
           default: return base.CastFrom(source);
         }
 

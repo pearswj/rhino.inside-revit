@@ -19,18 +19,22 @@ namespace RhinoInside.Revit.UI
   {
     public static string CommandName => "Bake\nSelected";
 
-    protected class AvailableWhenGHBakeReady : NeedsActiveDocument<GrasshopperCommand.AvailableWhenGHReady>
+    /// <summary>
+    /// Available when there are bake aware objects selected on Grasshopper canvas.
+    /// </summary>
+    protected new class Availability : NeedsActiveDocument<GrasshopperCommand.Availability>
     {
-      public override bool IsCommandAvailable(UIApplication _, DB.CategorySet selectedCategories) =>
-        base.IsCommandAvailable(_, selectedCategories) &&
-        // at this point addin is loaded and rhinocommon is available
-        GHHasObjectsToBake();
-
-      bool GHHasObjectsToBake()
+      protected override bool IsCommandAvailable(UIApplication app, DB.CategorySet selectedCategories)
       {
+        if (!base.IsCommandAvailable(app, selectedCategories))
+          return false;
+
+        if (!DB.DirectShape.IsSupportedDocument(Revit.ActiveUIDocument.Document))
+          return false;
+
         if (Instances.ActiveCanvas?.Document is GH_Document definition)
         {
-          if (Revit.ActiveUIDocument?.ActiveGraphicalView is DB.View view)
+          if (Revit.ActiveUIDocument.ActiveGraphicalView is DB.View view)
           {
             var options = new BakeOptions()
             {
@@ -57,7 +61,7 @@ namespace RhinoInside.Revit.UI
 
     public static void CreateUI(RibbonPanel ribbonPanel)
     {
-      var buttonData = NewPushButtonData<CommandGrasshopperBake, AvailableWhenGHBakeReady>
+      var buttonData = NewPushButtonData<CommandGrasshopperBake, Availability>
       (
         name: CommandName,
         iconName: "Ribbon.Grasshopper.Bake.png",
@@ -128,28 +132,20 @@ namespace RhinoInside.Revit.UI
 
       bool Bake(IGH_Param param, BakeOptions options, out ICollection<DB.ElementId> ids)
       {
-        var geometryToBake = param.VolatileData.AllData(true).Select(x => x.ScriptVariable()).
-        Select(x =>
-        {
-          switch (x)
-          {
-            case Rhino.Geometry.Point3d point: return new Rhino.Geometry.Point(point);
-            case Rhino.Geometry.GeometryBase geometry: return geometry;
-          }
-
-          return null;
-        });
+        var geometryToBake = param.VolatileData.AllData(true).
+          Select(GH_Convert.ToGeometryBase).
+          OfType<Rhino.Geometry.GeometryBase>();
 
         if (geometryToBake.Any())
         {
-          var categoryId = options.Category?.Id ?? CategoryId.GenericModel;
+          var categoryId = options.Category?.Id ?? new DB.ElementId(DB.BuiltInCategory.OST_GenericModel);
 
           var worksetId = DB.WorksetId.InvalidWorksetId;
           if (options.Document.IsWorkshared)
             worksetId = options.Workset?.Id ?? options.Document.GetWorksetTable().GetActiveWorksetId();
 
           ids = new List<DB.ElementId>();
-          foreach (var geometry in geometryToBake.Where(g => g != null))
+          foreach (var geometry in geometryToBake.Where(g => g is object))
           {
             var ds = DB.DirectShape.CreateElement(options.Document, categoryId);
             ds.Name = param.NickName;
@@ -159,8 +155,7 @@ namespace RhinoInside.Revit.UI
                 worksetParam.Set(worksetId.IntegerValue);
             }
 
-            var shape = geometry.ToShape().ToList();
-            ds.SetShape(shape);
+            ds.SetShape(geometry.ToShape());
             ids.Add(ds.Id);
           }
 
@@ -179,7 +174,7 @@ namespace RhinoInside.Revit.UI
         var doc = data.Application.ActiveUIDocument.Document;
 
         var bakeOptsDlg = new BakeOptionsDialog(data.Application);
-        if(bakeOptsDlg.ShowModal() != Eto.Forms.DialogResult.Ok)
+        if (bakeOptsDlg.ShowModal() != Eto.Forms.DialogResult.Ok)
           return Result.Cancelled;
 
         bool groupResult = (WF.Control.ModifierKeys & WF.Keys.Control) != WF.Keys.None;
@@ -199,7 +194,7 @@ namespace RhinoInside.Revit.UI
           transGroup.Start("Bake Selected");
 
           var bakedElementIds = new List<DB.ElementId>();
-          foreach (var obj in AvailableWhenGHBakeReady.ObjectsToBake(definition, options))
+          foreach (var obj in Availability.ObjectsToBake(definition, options))
           {
             if (obj.Bake(options, out var partial))
               bakedElementIds.AddRange(partial);

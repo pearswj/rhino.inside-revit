@@ -1,7 +1,8 @@
+using System;
 using Autodesk.Revit.Attributes;
-using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using RhinoInside.Revit.Settings;
+using DB = Autodesk.Revit.DB;
 
 namespace RhinoInside.Revit.UI
 {
@@ -29,9 +30,9 @@ namespace RhinoInside.Revit.UI
         StoreButton(CommandName, pushButton);
 
         // disable the button if options are readonly
-        pushButton.Enabled = !AddinOptions.IsReadOnly && AddIn.IsEtoFrameworkReady;
+        pushButton.Enabled = !AddinOptions.IsReadOnly && AssemblyResolver.References.ContainsKey("Eto");
 
-        if (AddIn.StartupMode == AddinStartupMode.Disabled)
+        if (AddIn.StartupMode == AddInStartupMode.Disabled)
         {
           pushButton.Enabled = false;
           pushButton.ToolTip = "Add-In is disabled";
@@ -39,7 +40,7 @@ namespace RhinoInside.Revit.UI
       }
     }
 
-    public override Result Execute(ExternalCommandData data, ref string message, ElementSet elements)
+    public override Result Execute(ExternalCommandData data, ref string message, DB.ElementSet elements)
     {
       // try opening options window
       if (!AddinOptions.IsReadOnly)

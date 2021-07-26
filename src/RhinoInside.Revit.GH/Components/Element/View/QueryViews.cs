@@ -26,7 +26,7 @@ namespace RhinoInside.Revit.GH.Components
     protected override ParamDefinition[] Inputs => inputs;
     static readonly ParamDefinition[] inputs =
     {
-      ParamDefinition.FromParam(new Parameters.Document(), ParamVisibility.Voluntary),
+      new ParamDefinition(new Parameters.Document(), ParamRelevance.Occasional),
       ParamDefinition.Create<Parameters.Param_Enum<Types.ViewDiscipline>>("Discipline", "D", "View discipline", GH_ParamAccess.item, optional: true),
       ParamDefinition.Create<Parameters.Param_Enum<Types.ViewFamily>>("Family", "T", "View family", GH_ParamAccess.item, optional: true),
       ParamDefinition.Create<Param_String>("Name", "N", "View name", GH_ParamAccess.item, optional: true),
@@ -105,7 +105,7 @@ namespace RhinoInside.Revit.GH.Components
           views = views.Where((x) => x.CanBePrinted == IsPrintable);
 
         if (viewFamily != DB.ViewFamily.Invalid)
-          views = views.Where((x) => (x.Document.GetElement(x.GetTypeId()) as DB.ViewFamilyType).ViewFamily == viewFamily);
+          views = views.Where(x => (x.Document.GetElement(x.GetTypeId()) as DB.ViewFamilyType)?.ViewFamily == viewFamily);
 
         if (name is object)
           views = views.Where(x => x.Name.IsSymbolNameLike(name));

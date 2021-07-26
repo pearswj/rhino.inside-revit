@@ -1,22 +1,12 @@
 using System;
-using System.IO;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using System.Reflection;
-using System.Windows.Interop;
-using System.Diagnostics;
-using System.Xml.Serialization;
-
-using Eto.Forms;
 using Eto.Drawing;
-using Forms = Eto.Forms;
-
-using DB = Autodesk.Revit.DB;
-
-using RhinoInside.Revit.Settings;
+using Eto.Forms;
 using RhinoInside.Revit.External.DB.Extensions;
+using RhinoInside.Revit.Settings;
+using DB = Autodesk.Revit.DB;
 
 namespace RhinoInside.Revit.UI
 {
@@ -152,16 +142,11 @@ namespace RhinoInside.Revit.UI
 
       // Category
       {
-        var directShapeCategories = BuiltInCategoryExtension.BuiltInCategories.
-                                    Where(x => DB.DirectShape.IsValidCategoryId(new DB.ElementId(x), Document)).
-                                    Select(x => Document.GetCategory(x)).
-                                    OfType<DB.Category>();
-
-        foreach (var group in directShapeCategories.GroupBy(x => x.CategoryType).OrderBy(x => x.Key.ToString()))
+        foreach (var group in DirectShapeCategories.GroupBy(x => x.CategoryType).OrderBy(x => x.Key.ToString()))
+        {
           foreach (var category in group.OrderBy(x => x.Name))
-          {
             categorySelector.Items.Add(new ListItem { Key = category.Id.ToString(), Text = category.Name });
-          }
+        }
 
         categorySelector.SelectedKey = ((int) DB.BuiltInCategory.OST_GenericModel).ToString();
         categorySelector.SelectedKeyChanged += CategorySelector_SelectedKeyChanged;
@@ -241,6 +226,12 @@ namespace RhinoInside.Revit.UI
       };
     }
 
+    IEnumerable<DB.Category> DirectShapeCategories =>
+      BuiltInCategoryExtension.BuiltInCategories.
+      Where(categoryId => DB.DirectShape.IsValidCategoryId(new DB.ElementId(categoryId), Document)).
+      Select(categoryId => Document.GetCategory(categoryId)).
+      Where(x => x is object);
+
     private void CategorySelector_SelectedKeyChanged(object sender, EventArgs e)
     {
       RefreshFamilyNameList();
@@ -253,14 +244,16 @@ namespace RhinoInside.Revit.UI
 
       using (var collector = new DB.FilteredElementCollector(Document))
       {
-        var familyCollector = collector.WhereElementIsElementType().
+        var familyNames = collector.WhereElementIsElementType().
           WhereElementIsKindOf(typeof(DB.DirectShapeType)).
           OfCategoryId(CategoryId).
           OfType<DB.DirectShapeType>().
-          GroupBy(x => x.FamilyName);
+          Select(x => x.FamilyName).
+          Distinct().
+          OrderBy(x => x);
 
-        foreach (var family in familyCollector.OrderBy(x => x.Key))
-          familyName.Items.Add(family.Key);
+        foreach (var familyName in familyNames)
+          this.familyName.Items.Add(familyName);
       }
     }
 
@@ -277,8 +270,8 @@ namespace RhinoInside.Revit.UI
         if (!string.IsNullOrEmpty(familyName))
           typeCollector = typeCollector.WhereParameterEqualsTo(DB.BuiltInParameter.ALL_MODEL_FAMILY_NAME, familyName);
 
-        foreach (var type in typeCollector.OfType<DB.DirectShapeType>().GroupBy(x => x.Name).OrderBy(x => x.Key))
-          typeName.Items.Add(type.Key);
+        foreach (var name in typeCollector.OfType<DB.DirectShapeType>().Select(x => x.Name).Distinct().OrderBy(x => x))
+          typeName.Items.Add(name);
       }
     }
 

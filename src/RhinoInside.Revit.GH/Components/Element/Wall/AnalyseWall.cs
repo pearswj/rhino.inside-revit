@@ -75,7 +75,7 @@ namespace RhinoInside.Revit.GH.Components
         );
       manager.AddBooleanParameter(
         name: "Bottom Is Attached",
-        nickname: "BLA?",
+        nickname: "BLA",
         description: "Whether the wall instance is attached to the base level",
         access: GH_ParamAccess.item
         );
@@ -95,7 +95,7 @@ namespace RhinoInside.Revit.GH.Components
         );
       manager.AddBooleanParameter(
         name: "Top Is Attached",
-        nickname: "TLA?",
+        nickname: "TLA",
         description: "Whether the wall instance is attached to the top level",
         access: GH_ParamAccess.item
         );
@@ -139,7 +139,7 @@ namespace RhinoInside.Revit.GH.Components
 
       manager.AddBooleanParameter(
         name: "Is Room Bounding",
-        nickname: "RB?",
+        nickname: "RB",
         description: "Whether given wall instance is room bounding",
         access: GH_ParamAccess.item
         );
@@ -147,7 +147,7 @@ namespace RhinoInside.Revit.GH.Components
 
       manager.AddBooleanParameter (
         name: "Structural",
-        nickname: "ST?",
+        nickname: "ST",
         description: "Whether given wall instance is structural",
         access: GH_ParamAccess.item
         );
@@ -189,7 +189,7 @@ namespace RhinoInside.Revit.GH.Components
 
       PipeHostParameter(DA, wallInstance, DB.BuiltInParameter.WALL_USER_HEIGHT_PARAM, "Height");
       PipeHostParameter(DA, wallInstance, DB.BuiltInParameter.CURVE_ELEM_LENGTH, "Length");
-      DA.SetData("Width", UnitConverter.InRhinoUnits(wallInstance.GetWidth(), DB.ParameterType.Length));
+      DA.SetData("Width", UnitConverter.InRhinoUnits(wallInstance.GetWidth(), External.DB.Schemas.SpecType.Measurable.Length));
 #if REVIT_2021
      PipeHostParameter(DA, wallInstance, DB.BuiltInParameter.WALL_SINGLE_SLANT_ANGLE_FROM_VERTICAL, "Slant Angle");
 #else

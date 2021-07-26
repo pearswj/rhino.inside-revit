@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using Autodesk.Revit.DB;
 
@@ -8,6 +9,15 @@ namespace RhinoInside.Revit.External.DB.Extensions
   public static class DocumentExtension
   {
     public static bool IsValid(this Document doc) => doc?.IsValidObject == true;
+
+    public static bool IsValidWithLog(this Document doc, out string log)
+    {
+      if (doc is null)        { log = "Document is a null reference.";         return false; }
+      if (!doc.IsValidObject) { log = "Referenced Revit document was closed."; return false; }
+
+      log = string.Empty;
+      return true;
+    }
 
     /// <summary>
     /// Determines whether the specified <see cref="Autodesk.Revit.DB.Document"/> equals to this <see cref="Autodesk.Revit.DB.Document"/>.
@@ -72,30 +82,80 @@ namespace RhinoInside.Revit.External.DB.Extensions
     }
 
     #region File
-    public static string GetFilePath(this Document doc)
+    /// <summary>
+    /// The file name of the document's disk file without extension.
+    /// </summary>
+    /// <param name="doc"></param>
+    /// <returns>The mode title</returns>
+    public static string GetTitle(this Document doc)
     {
-      if (doc is null)
+#if REVIT_2022
+      return doc.Title;
+#else
+      return Path.GetFileNameWithoutExtension(doc.Title);
+#endif
+    }
+
+    /// <summary>
+    /// The file name of the document's disk file with extension.
+    /// </summary>
+    /// <param name="doc"></param>
+    /// <returns>The model file name</returns>
+    /// <remarks>
+    /// This method returns an empty string if the project has not been saved.
+    /// Note that the file name returned will be empty if a document is detached.
+    /// <see cref="Document.IsDetached"/>
+    /// </remarks>
+    public static string GetFileName(this Document doc)
+    {
+      /// <summary>
+      /// To enforce the method remarks, we need to check IsDetached here.
+      /// </summary>
+      if (doc is null || doc.IsDetached)
         return string.Empty;
 
-      if (string.IsNullOrEmpty(doc.PathName))
-        return (doc.Title + (doc.IsFamilyDocument ? ".rfa" : ".rvt"));
+      if (!string.IsNullOrEmpty(doc.PathName))
+        return Path.GetFileName(doc.PathName);
 
-      return doc.PathName;
+      return doc.GetTitle() + (doc.IsFamilyDocument ? ".rfa" : ".rvt");
     }
 
-    public static bool HasModelPath(this Document doc, ModelPath modelPath)
+    /// <summary>
+    /// Gets the model path of the model.
+    /// </summary>
+    /// <remarks>
+    /// If <paramref name="doc"/> is still not saved this method returns null.
+    /// </remarks>
+    /// <param name="doc"></param>
+    /// <returns>The model path or null if still not saved.</returns>
+    public static ModelPath GetModelPath(this Document doc)
     {
-#if REVIT_2020
-      if (modelPath.CloudPath)
-        return doc.IsModelInCloud && modelPath.Compare(doc.GetCloudModelPath()) == 0;
+      /// <summary>
+      /// Revit documentation reads like:
+      ///
+      /// <see cref="Document.PathName"/> summary:
+      /// This string is empty if the project has not been saved or does not have a disk
+      /// file associated with it yet. Note that the pathname will be **empty** if a document
+      /// is detached. See Autodesk.Revit.DB.Document.IsDetached.
+      ///  
+      /// <see cref="Document.IsDetached"/> summary:
+      /// Note that <see cref="Document.Title"/> and <see cref="Document.PathName"/> 
+      /// will be **empty** strings if a document is detached.
+      /// 
+      /// Both descriptions are not accurate.
+      /// Detached models return only the file name on its Document.PathName property,
+      /// instead of an empty string. So we need to check IsDetached here.
+      /// </summary>
+      if (string.IsNullOrEmpty(doc.PathName) || doc.IsDetached)
+        return default;
+
+#if REVIT_2019
+      if (doc.IsModelInCloud)
+        return doc.GetCloudModelPath();
 #endif
 
-      if (modelPath.ServerPath)
-        return doc.IsWorkshared && modelPath.Compare(doc.GetWorksharingCentralModelPath()) == 0;
-
-      return modelPath.Compare(new FilePath(doc.PathName)) == 0;
+      return ModelPathUtils.ConvertUserVisiblePathToModelPath(doc.PathName);
     }
-
     #endregion
 
     #region ElementId
@@ -129,7 +189,7 @@ namespace RhinoInside.Revit.External.DB.Extensions
       {
         if (EpisodeId == Guid.Empty)
         {
-          if(((BuiltInCategory) id).IsValid())
+          if (((BuiltInCategory) id).IsValid())
             categoryId = new ElementId((BuiltInCategory) id);
         }
         else
@@ -238,6 +298,158 @@ namespace RhinoInside.Revit.External.DB.Extensions
     }
     #endregion
 
+    #region Name
+    internal static bool TryGetElement<T>(this Document doc, out T element, string name, string parentName = default, BuiltInCategory? categoryId = default) where T : Element
+    {
+      if (typeof(ElementType).IsAssignableFrom(typeof(T)))
+      {
+        using (var collector = new FilteredElementCollector(doc).WhereElementIsKindOf(typeof(T)))
+        {
+          element = collector.
+          WhereElementIsKindOf(typeof(T)).
+          WhereCategoryIdEqualsTo(categoryId).
+          WhereParameterEqualsTo(BuiltInParameter.ALL_MODEL_FAMILY_NAME, parentName).
+          WhereParameterEqualsTo(BuiltInParameter.ALL_MODEL_TYPE_NAME, name).
+          OfType<T>().FirstOrDefault();
+        }
+      }
+      else if (typeof(AppearanceAssetElement).IsAssignableFrom(typeof(T)))
+      {
+        element = name is object ? AppearanceAssetElement.GetAppearanceAssetElementByName(doc, name) as T : default;
+      }
+      else
+      {
+        using (var collector = new FilteredElementCollector(doc))
+        {
+          var elementCollector = collector.
+          WhereElementIsKindOf(typeof(T)).
+          WhereCategoryIdEqualsTo(categoryId);
+
+          var nameParameter = ElementExtension.GetNameParameter(typeof(T));
+          var enumerable = nameParameter != BuiltInParameter.INVALID ?
+            elementCollector.WhereParameterEqualsTo(nameParameter, name) :
+            elementCollector.Where(x => x.Name == name);
+
+          element = enumerable.OfType<T>().FirstOrDefault();
+        }
+      }
+
+      return element is object;
+    }
+
+    internal static IEnumerable<Element> GetNamesakeElements(this Document doc, Type type, string name, string parentName = default, BuiltInCategory? categoryId = default)
+    {
+      var enumerable = Enumerable.Empty<Element>();
+
+      if (!string.IsNullOrEmpty(name))
+      {
+        if (typeof(ElementType).IsAssignableFrom(type))
+        {
+          enumerable = new FilteredElementCollector(doc).
+          WhereElementIsKindOf(type).
+          WhereCategoryIdEqualsTo(categoryId).
+          WhereParameterEqualsTo(BuiltInParameter.ALL_MODEL_FAMILY_NAME, parentName).
+          WhereParameterBeginsWith(BuiltInParameter.ALL_MODEL_TYPE_NAME, name);
+        }
+        else
+        {
+          var elementCollector = new FilteredElementCollector(doc).
+          WhereElementIsKindOf(type).
+          WhereCategoryIdEqualsTo(categoryId);
+
+          var nameParameter = ElementExtension.GetNameParameter(type);
+          enumerable = nameParameter != BuiltInParameter.INVALID ?
+            elementCollector.WhereParameterBeginsWith(nameParameter, name) :
+            elementCollector.Where(x => x.Name.StartsWith(name));
+        }
+      }
+
+      return enumerable.
+        // WhereElementIsKindOf sometimes is not enough.
+        Where(x => type.IsAssignableFrom(x.GetType())).
+        // Look for elements called "name" or "name 1" but not "name abc".
+        Where
+        (
+          x =>
+          {
+            TryParseNameId(x.Name, out var prefix, out var _);
+            return prefix == name;
+          }
+        );
+    }
+
+    internal static bool TryParseNameId(string name, out string prefix, out int id)
+    {
+      id = default;
+      var index = name.LastIndexOf(' ');
+      if (index >= 0)
+      {
+        if (int.TryParse(name.Substring(index + 1), out id))
+        {
+          prefix = name.Substring(0, index);
+          return true;
+        }
+      }
+
+      prefix = name;
+      return false;
+    }
+
+    internal static int? GetIncrementalName(this Document doc, Type type, ref string name, string parentName = default, BuiltInCategory? categoryId = default)
+    {
+      if (name is null)
+        throw new ArgumentNullException(nameof(name));
+
+      if (name is null)
+        throw new ArgumentNullException(nameof(name));
+
+      if (!NamingUtils.IsValidName(name))
+        throw new ArgumentException("Element name contains prohibited characters and is invalid.", nameof(name));
+
+      // Remove number sufix from name and trailing spaces.
+      TryParseNameId(name.Trim(), out name, out var _);
+
+      var last = doc.GetNamesakeElements(type, name, parentName, categoryId).
+        OrderBy(x => x.Name, default(ElementNameComparer)).LastOrDefault();
+
+      if (last is object)
+      {
+        if (TryParseNameId(last.Name, out name, out var id))
+          return id + 1;
+
+        return 1;
+      }
+
+      return default;
+    }
+
+    internal static IEnumerable<string> WhereNamePrefixedWith(this IEnumerable<string> enumerable, string prefix)
+    {
+      foreach (var value in enumerable)
+      {
+        if (!value.StartsWith(prefix)) continue;
+
+        TryParseNameId(value, out var name, out var _);
+        if (name != prefix) continue;
+
+        yield return value;
+      }
+    }
+
+    internal static string NextNameOrDefault(this IEnumerable<string> enumerable)
+    {
+      var last = enumerable.OrderBy(x => x, default(ElementNameComparer)).LastOrDefault();
+
+      if (last is object)
+      {
+        TryParseNameId(last, out var next, out var id);
+        return $"{next} {id + 1}";
+      }
+
+      return default;
+    }
+    #endregion
+
     #region Category
     internal static Category AsCategory(Element element)
     {
@@ -263,15 +475,6 @@ namespace RhinoInside.Revit.External.DB.Extensions
     }
 
     /// <summary>
-    /// IEqualityComparer for <see cref="DB.Category"/> that assumes all categories are from the same <see cref="DB.Document"/>.
-    /// </summary>
-    struct CategoryEqualityComparer : IEqualityComparer<Category>
-    {
-      public bool Equals(Category x, Category y) => x.Id == y.Id;
-      public int GetHashCode(Category obj) => obj.Id.IntegerValue;
-    }
-
-    /// <summary>
     /// Query all <see cref="Autodesk.Revit.DB.Category"/> objects in <paramref name="doc"/>
     /// that are sub categories of <paramref name="parentId"/> or
     /// root categories if <paramref name="parentId"/> is <see cref="Autodesk.Revit.DB.ElementId.InvalidElementId"/>.
@@ -282,11 +485,11 @@ namespace RhinoInside.Revit.External.DB.Extensions
     /// <remarks>This method will return all categories and sub categories if <paramref name="parentId"/> is null.</remarks>
     public static ICollection<Category> GetCategories(this Document doc, ElementId parentId = default)
     {
-      using (var collector = new FilteredElementCollector(doc))
+      using (var collector = new FilteredElementCollector(doc).OfClass(typeof(GraphicsStyle)))
       {
         var categories =
         (
-          collector.OfClass(typeof(GraphicsStyle)).Cast<GraphicsStyle>().
+          collector.Cast<GraphicsStyle>().
           Select(x => x.GraphicsStyleCategory).
           Where(x => x.Name != string.Empty)
         );
@@ -294,14 +497,14 @@ namespace RhinoInside.Revit.External.DB.Extensions
         if (parentId is object)
           categories = categories.Where(x => parentId == (x.Parent?.Id ?? ElementId.InvalidElementId));
 
-        return new HashSet<Category>(categories, new CategoryEqualityComparer());
+        return new HashSet<Category>(categories, CategoryEqualityComparer.SameDocument);
       }
     }
 
     public static Category GetCategory(this Document doc, BuiltInCategory categoryId)
     {
       if (doc is null || categoryId == BuiltInCategory.INVALID)
-        return null;
+        return default;
 
       // 1. We try with the regular way calling Category.GetCategory
       try
@@ -328,10 +531,10 @@ namespace RhinoInside.Revit.External.DB.Extensions
     public static Category GetCategory(this Document doc, ElementId id)
     {
       if (doc is null || !id.IsValid())
-        return null;
+        return default;
 
       return id.TryGetBuiltInCategory(out var categoryId) ?
-        GetCategory(doc, categoryId):
+        GetCategory(doc, categoryId) :
         AsCategory(doc.GetElement(id));
     }
 
@@ -342,16 +545,15 @@ namespace RhinoInside.Revit.External.DB.Extensions
       if (BuiltInCategoriesWithParameters is null || !doc.Equals(BuiltInCategoriesWithParametersDocument))
       {
         BuiltInCategoriesWithParametersDocument = doc;
-        BuiltInCategoriesWithParameters = BuiltInCategoryExtension.BuiltInCategories.
-          Where
-          (
-            bic =>
-            {
-              try { return Category.GetCategory(doc, bic)?.AllowsBoundParameters == true; }
-              catch (Autodesk.Revit.Exceptions.InvalidOperationException) { return false; }
-            }
-          ).
-          ToArray();
+        BuiltInCategoriesWithParameters = BuiltInCategoryExtension.BuiltInCategories.Where
+        (
+          bic =>
+          {
+            try { return Category.GetCategory(doc, bic)?.AllowsBoundParameters == true; }
+            catch (Autodesk.Revit.Exceptions.InvalidOperationException) { return false; }
+          }
+        ).
+        ToArray();
       }
 
       return BuiltInCategoriesWithParameters;
@@ -467,24 +669,34 @@ namespace RhinoInside.Revit.External.DB.Extensions
     /// </summary>
     /// <param name="doc"></param>
     /// <returns>The active graphical <see cref="Autodesk.Revit.DB.View"/></returns>
-    public static View GetActiveGraphicalView(this Document doc) => Rhinoceros.InvokeInHostContext(() =>
+    /// <remarks>
+    /// The active view is the view that last had focus in the UI. null if no view is considered active.
+    /// </remarks>
+    public static View GetActiveGraphicalView(this Document doc)
     {
-      using (var uiDocument = new Autodesk.Revit.UI.UIDocument(doc))
+      var active = doc.ActiveView;
+      if (active?.ViewType.IsGraphicalViewType() == true)
+        return active;
+
+      return Rhinoceros.InvokeInHostContext(() =>
       {
-        var activeView = uiDocument.ActiveGraphicalView;
-
-        if (activeView is null)
+        using (var uiDocument = new Autodesk.Revit.UI.UIDocument(doc))
         {
-          var openViews = uiDocument.GetOpenUIViews().
-              Select(x => doc.GetElement(x.ViewId) as View).
-              Where(x => x.ViewType.IsGraphicalViewType());
+          var activeView = uiDocument.ActiveGraphicalView;
 
-          activeView = openViews.FirstOrDefault();
+          if (activeView is null)
+          {
+            var openViews = uiDocument.GetOpenUIViews().
+                Select(x => doc.GetElement(x.ViewId) as View).
+                Where(x => x.ViewType.IsGraphicalViewType());
+
+            activeView = openViews.FirstOrDefault();
+          }
+
+          return activeView;
         }
-
-        return activeView;
-      }
-    });
+      });
+    }
 
     /// <summary>
     /// Gets the active <see cref="Autodesk.Revit.DB.View"/> of the provided <see cref="Autodesk.Revit.DB.Document"/>.
@@ -536,5 +748,205 @@ namespace RhinoInside.Revit.External.DB.Extensions
       return false;
     }
     #endregion
+  }
+
+  public static class ModelPathExtension
+  {
+    /// <summary>
+    /// Determines whether the specified <see cref="Autodesk.Revit.DB.ModelPath"/>
+    /// equals to this <see cref="Autodesk.Revit.DB.ModelPath"/>.
+    /// </summary>
+    /// <remarks>
+    /// Two <see cref="Autodesk.Revit.DB.ModelPath"/> instances are considered equivalent
+    /// if they represent the same target model file.
+    /// </remarks>
+    /// <param name="self"></param>
+    /// <param name="other"></param>
+    /// <returns></returns>
+    public static bool IsEquivalent(this ModelPath self, ModelPath other)
+    {
+      if (ReferenceEquals(self, other))
+        return true;
+
+      if (self is null || other is null)
+        return false;
+
+      return self.Compare(other) == 0;
+    }
+
+    /// <summary>
+    /// Returns whether this path is a file path (as opposed to a server path or cloud path)
+    /// </summary>
+    /// <param name="self"></param>
+    /// <returns></returns>
+    public static bool IsFilePath(this ModelPath self)
+    {
+      return !self.ServerPath && !self.IsCloudPath();
+    }
+
+    /// <summary>
+    /// Returns whether this path is a server path (as opposed to a file path or cloud path)
+    /// </summary>
+    /// <param name="self"></param>
+    /// <returns></returns>
+    public static bool IsServerPath(this ModelPath self)
+    {
+      return self.ServerPath && !self.IsCloudPath();
+    }
+
+    /// <summary>
+    /// Returns whether this path is a cloud path (as opposed to a file path or server path)
+    /// </summary>
+    /// <param name="self"></param>
+    /// <returns></returns>
+    public static bool IsCloudPath(this ModelPath self)
+    {
+#if REVIT_2019
+      return self.CloudPath;
+#else
+      return self.GetProjectGUID() != Guid.Empty && self.GetModelGUID() != Guid.Empty;
+#endif
+    }
+
+    /// <summary>
+    /// Returns the region of the cloud account and project which contains this model.
+    /// </summary>
+    /// <param name="self"></param>
+    /// <returns></returns>
+    public static string GetRegion(this ModelPath self)
+    {
+      if (self.IsCloudPath())
+      {
+#if REVIT_2021
+        return self.Region;
+#else
+        return "GLOBAL";
+#endif
+      }
+
+      return default;
+    }
+  }
+
+  public static class ModelUri
+  {
+    public const string UriSchemeServer = "RSN";
+    public const string UriSchemeCloud = "cloud";
+    internal static readonly Uri Empty = new Uri("empty:");
+
+    public static Uri ToUri(this ModelPath modelPath)
+    {
+      if (modelPath is null)
+        return default;
+
+      if (modelPath.Empty)
+        return ModelUri.Empty;
+
+      if (modelPath.IsCloudPath())
+      {
+        return new UriBuilder(UriSchemeCloud, modelPath.GetRegion(), 0, $"{modelPath.GetProjectGUID():D}/{modelPath.GetModelGUID():D}").Uri;
+      }
+      else
+      {
+        var path = ModelPathUtils.ConvertModelPathToUserVisiblePath(modelPath);
+        if (Uri.TryCreate(path, UriKind.Absolute, out var uri))
+          return uri;
+      }
+
+      throw new ArgumentException($"Failed to convert {nameof(ModelPath)} in to {nameof(Uri)}", nameof(modelPath));
+    }
+
+    public static ModelPath ToModelPath(this Uri uri)
+    {
+      if (uri is null)
+        return default;
+
+      if (uri.IsFile)
+        return new FilePath(uri.LocalPath);
+
+      if (IsServerUri(uri, out var centralServerLocation, out var path))
+        return new ServerPath(centralServerLocation, path);
+
+      if (IsCloudUri(uri, out var region, out var projectId, out var modelId))
+      {
+        return Rhinoceros.InvokeInHostContext(() =>
+        {
+          try
+          {
+#if REVIT_2021
+            return ModelPathUtils.ConvertCloudGUIDsToCloudPath(region, projectId, modelId);
+#elif REVIT_2019
+            return ModelPathUtils.ConvertCloudGUIDsToCloudPath(projectId, modelId);
+#else
+            return default(ModelPath);
+#endif
+          }
+          catch (Autodesk.Revit.Exceptions.ApplicationException) { return default; }
+        });
+      }
+
+      throw new ArgumentException($"Failed to convert {nameof(Uri)} in to {nameof(ModelPath)}", nameof(uri));
+    }
+
+    public static bool IsEmptyUri(this Uri uri)
+    {
+      return uri.Scheme.Equals(Empty.Scheme, StringComparison.InvariantCultureIgnoreCase);
+    }
+
+    public static bool IsFileUri(this Uri uri, out string path)
+    {
+      if (uri.IsFile)
+      {
+        path = uri.LocalPath;
+        return true;
+      }
+
+      path = default;
+      return false;
+    }
+
+    public static bool IsServerUri(this Uri uri, out string centralServerLocation, out string path)
+    {
+      if (uri.Scheme.Equals(UriSchemeServer, StringComparison.InvariantCultureIgnoreCase))
+      {
+        centralServerLocation = uri.Host;
+        path = uri.AbsolutePath;
+        return true;
+      }
+
+      centralServerLocation = default;
+      path = default;
+      return false;
+    }
+
+    public static bool IsCloudUri(this Uri uri, out string region, out Guid projectId, out Guid modelId)
+    {
+      if (uri.Scheme.Equals(UriSchemeCloud, StringComparison.InvariantCultureIgnoreCase))
+      {
+        var fragments = uri.AbsolutePath.Split('/');
+        if (fragments.Length == 3)
+        {
+          if
+          (
+            fragments[0] == string.Empty &&
+            Guid.TryParseExact(fragments[1], "D", out projectId) &&
+            Guid.TryParseExact(fragments[2], "D", out modelId)
+          )
+          {
+            if (uri.Host == string.Empty)
+              region = "GLOBAL";
+            else
+              region = uri.Host.ToUpperInvariant();
+
+            return true;
+          }
+        }
+      }
+
+      region = default;
+      projectId = default;
+      modelId = default;
+      return false;
+    }
   }
 }

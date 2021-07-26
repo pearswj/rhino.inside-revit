@@ -8,7 +8,7 @@ using Grasshopper.Kernel.Types;
 using Rhino.Geometry;
 using RhinoInside.Revit.External.DB;
 using RhinoInside.Revit.External.DB.Extensions;
-using RhinoInside.Revit.External.DB.Schemas;
+using EDBS = RhinoInside.Revit.External.DB.Schemas;
 using DB = Autodesk.Revit.DB;
 using DBX = RhinoInside.Revit.External.DB;
 
@@ -19,38 +19,33 @@ namespace RhinoInside.Revit.GH.Types
   /// Interface to implement into classes that has a stable <see cref="DB.Reference"/>.
   /// For example: <see cref="DB.Element"/>, <see cref="DB.GeometryObject"/>
   /// </summary>
-  public interface IGH_ElementId : IGH_ReferenceObject
+  public interface IGH_ElementId : IGH_ReferenceObject, IEquatable<IGH_ElementId>
   {
     DB.Reference Reference { get; }
 
     Guid DocumentGUID { get; }
     string UniqueID { get; }
-
-    bool IsReferencedElement { get; }
-    bool IsElementLoaded { get; }
-    bool LoadElement();
-    void UnloadElement();
   }
 
-  public abstract class ElementId : ReferenceObject, IGH_ElementId, IEquatable<ElementId>, IGH_QuickCast
+  public abstract class ElementId : ReferenceObject, IGH_ReferenceData, IGH_ElementId, IGH_QuickCast
   {
     #region System.Object
-    public bool Equals(ElementId other) => other is object &&
+    public bool Equals(IGH_ElementId other) => other is object &&
       other.DocumentGUID == DocumentGUID && other.UniqueID == UniqueID;
-    public override bool Equals(object obj) => (obj is ElementId id) ? Equals(id) : base.Equals(obj);
+    public override bool Equals(object obj) => (obj is IGH_ElementId id) ? Equals(id) : base.Equals(obj);
     public override int GetHashCode() => DocumentGUID.GetHashCode() ^ UniqueID.GetHashCode();
 
     public override string ToString()
     {
-      var TypeName = $"Revit {((IGH_Goo) this).TypeName}";
+      var TypeName = ((IGH_Goo) this).TypeName;
 
-      if (!IsReferencedElement)
-        return $"{TypeName} : {DisplayName}";
+      if (!IsReferencedData)
+        return DisplayName;
 
       var tip = IsValid ?
       (
-        IsElementLoaded ?
-        $"{TypeName} : {DisplayName}" :
+        IsReferencedDataLoaded ?
+        DisplayName :
         $"Unresolved {TypeName} : {UniqueID}"
       ) :
       $"Invalid {TypeName}" + (Id is object ? $" : {Id.IntegerValue}" : string.Empty);
@@ -60,7 +55,7 @@ namespace RhinoInside.Revit.GH.Types
         return
         (
           Documents.Size > 1 ?
-          $"{tip} @ {Document?.Title ?? DocumentGUID.ToString()}" :
+          $"{tip} @ {Document?.GetFileName() ?? DocumentGUID.ToString()}" :
           tip
         );
       }
@@ -70,7 +65,7 @@ namespace RhinoInside.Revit.GH.Types
     #region GH_ISerializable
     protected override bool Read(GH_IReader reader)
     {
-      UnloadElement();
+      UnloadReferencedData();
 
       var documentGUID = Guid.Empty;
       reader.TryGetGuid("DocumentGUID", ref documentGUID);
@@ -96,7 +91,30 @@ namespace RhinoInside.Revit.GH.Types
     #endregion
 
     #region IGH_Goo
-    public override string IsValidWhyNot => IsValid ? string.Empty : "Not Valid";
+
+    public override bool IsValid => base.IsValid && Id.IsValid();
+    public override string IsValidWhyNot
+    {
+      get
+      {
+        if (DocumentGUID == Guid.Empty) return $"DocumentGUID '{Guid.Empty}' is invalid";
+        if (!UniqueId.TryParse(UniqueID, out var _, out var _)) return $"UniqueID '{UniqueID}' is invalid";
+
+        var id = Id;
+        if (Document is null)
+        {
+          return $"Referenced Revit document '{DocumentGUID}' was closed.";
+        }
+        else
+        {
+          if (id is null) return $"Referenced Revit element '{UniqueID}' is not available.";
+          if (id == DB.ElementId.InvalidElementId) return "Id is equal to InvalidElementId.";
+        }
+
+        return default;
+      }
+    }
+
     public virtual object ScriptVariable() => Value;
 
     public override bool CastTo<Q>(out Q target)
@@ -136,10 +154,13 @@ namespace RhinoInside.Revit.GH.Types
       public bool Valid => owner.IsValid;
 
       [System.ComponentModel.Description("The document this element belongs to.")]
-      public string Document => owner.Document.GetFilePath();
+      public string Document => owner.Document?.GetFileName();
+
       [System.ComponentModel.Description("The Guid of document this element belongs to.")]
       public Guid DocumentGUID => owner.DocumentGUID;
-      protected virtual bool IsValidId(DB.Document doc, DB.ElementId id) => true;
+
+      protected virtual bool IsValidId(DB.Document doc, DB.ElementId id) =>
+        owner.GetType() == Element.FromElementId(doc, id).GetType();
 
       [System.ComponentModel.Description("A stable unique identifier for an element within the document.")]
       public string UniqueID => owner.UniqueID;
@@ -189,7 +210,7 @@ namespace RhinoInside.Revit.GH.Types
             var description = string.Empty;
             if (parameter.Definition is DB.Definition definition)
             {
-              DataType dataType = definition.GetDataType();
+              EDBS.DataType dataType = definition.GetDataType();
               description = dataType.Label.ToLower();
 
               if (string.IsNullOrEmpty(description))
@@ -205,7 +226,7 @@ namespace RhinoInside.Revit.GH.Types
               description = "read only " + description;
 
             description = $"{parameterClass} {description} parameter.{Environment.NewLine}{Environment.NewLine}";
-            description += $"ParameterId : {((ParameterId)parameter.GetTypeId()).FullName}";
+            description += $"ParameterId : {((EDBS.ParameterId)parameter.GetTypeId()).FullName}";
 
             if(parameter.Id.TryGetBuiltInParameter(out var builtInParameter))
               description += $"{Environment.NewLine}BuiltInParameter : {builtInParameter.ToStringGeneric()}";
@@ -241,7 +262,7 @@ namespace RhinoInside.Revit.GH.Types
     {
       get
       {
-        if (base.Value is null && IsElementLoaded)
+        if (base.Value is null && IsReferencedDataLoaded)
           base.Value = FetchValue();
 
         return base.Value;
@@ -250,23 +271,26 @@ namespace RhinoInside.Revit.GH.Types
     }
     #endregion
 
+    #region IGH_ReferencedData
+    public bool IsReferencedData => DocumentGUID != Guid.Empty;
+    public abstract bool IsReferencedDataLoaded { get; }
+
+    public abstract bool LoadReferencedData();
+    protected abstract object FetchValue();
+    public virtual void UnloadReferencedData()
+    {
+      ResetValue();
+
+      if (IsReferencedData)
+        Document = default;
+    }
+    #endregion
+
     #region IGH_ElementId
     public abstract DB.Reference Reference { get; }
 
     public Guid DocumentGUID { get; protected set; } = Guid.Empty;
     public string UniqueID { get; protected set; } = string.Empty;
-    public bool IsReferencedElement => DocumentGUID != Guid.Empty;
-
-    public abstract bool IsElementLoaded { get; }
-    public abstract bool LoadElement();
-    protected abstract object FetchValue();
-    public virtual void UnloadElement()
-    {
-      ResetValue();
-
-      if (IsReferencedElement)
-        Document = default;
-    }
     #endregion
 
     #region IGH_QuickCast
@@ -324,7 +348,7 @@ namespace RhinoInside.Revit.GH.Types
     protected ElementId(DB.Document doc, object value) : base(doc, value) { }
 
     #region Properties
-    public override string DisplayName => IsReferencedElement ?
+    public override string DisplayName => IsReferencedData ?
       Id is null ? "INVALID" : Id.IntegerValue.ToString() :
       "<None>";
     #endregion

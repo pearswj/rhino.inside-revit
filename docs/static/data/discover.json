@@ -78,7 +78,7 @@
         "highlight": true,
         "title": "Building Systems Specialist Course",
         "url": "PAZ-academy-course",
-        "thumbnail": "/static/images/discover/PAZ-Academy-BSS.jpg",
+        "thumbnail": "/static/images/discover/PAZ-BSS-COVER.jpg",
         "author": "PAZ Academy",
         "authorUrl": "",
         "description": "A complete cirricullum on Parametric BIM Modeling. This extenive course results in the BSS TITLE focused on Rhino.Inside Revit + Rhinoceros & Grasshopper",
@@ -169,6 +169,22 @@
         "author": "Jeffrey Pinheiro, AIA AKA The Revit Kid",
         "authorUrl": "http://therevitkid.blogspot.com/",
         "description": "The Revit Kid on BIM After Dark is joined by Marcello Sgambelluri.  They discuss both Grasshopper and Dynamo scripts in Revit. We will be talking about the book, showing some examples, and demonstrating how knowing BOTH of these tools expands the functionality of Revit for you. Discover how these tools can help your workflow.",
+        "kinds": [
+            "podcast",
+            "video"
+        ],
+        "tags": [
+            "discussion",
+            "overview"
+        ]
+    },
+    {
+        "title": "BIMThoughts Rhino.Inside.Revit",
+        "url": "https://youtu.be/4P5jO4clI5k",
+        "thumbnail": "https://i3.ytimg.com/vi/4P5jO4clI5k/maxresdefault.jpg",
+        "author": "BIMThoughts",
+        "authorUrl": "https://bimthoughts.com/e2125/",
+        "description": "Scott Davidson and Ehsan discuss Rhino.Inside.Revit with the BIMThoughts crew",
         "kinds": [
             "podcast",
             "video"
@@ -294,6 +310,23 @@
         ]
     },
     {
+        "title": "Efficient modelmaking with Rhino.Inside.Revit.",
+        "url": "https://youtu.be/KD_Zh_ddNjE",
+        "thumbnail": "https://i3.ytimg.com/vi/KD_Zh_ddNjE/maxresdefault.jpg",
+        "author": "Olivia Morgan",
+        "authorUrl": "https://yourmodel.space/",
+        "description": "BIMThoughts crew chats with Olivia Morgan, the founder of Model Space about all things model making. We cover 3D printing, get a Revit model ready for 3D printing, how awesome Rhino.Inside.Revit is so much more! Be sure to listen to the end to get all of Olivia’s Hot Tips for model making!",
+        "kinds": [
+            "podcast",
+            "video"
+        ],
+        "tags": [
+            "modelmaking",
+            "workflow",
+            "overview"
+        ]
+    },
+    {
         "title": "Cutting Edge Hack: Grasshopper & Dynamo working together within Revit",
         "url": "https://www.youtube.com/watch?v=Oumd-Ye75fE",
         "thumbnail": "/static/images/discover/marcello-hack-video.jpg",
@@ -327,7 +360,7 @@
         ]
     },
     {
-        "title": "BIMThoughts on  Rhino.Inside.Revit and PyRevit",
+        "title": "BIMThoughts on Rhino.Inside.Revit and PyRevit",
         "url": "https://youtu.be/qTysGOdhHzI",
         "thumbnail": "https://i3.ytimg.com/vi/qTysGOdhHzI/maxresdefault.jpg",
         "author": "BIMThoughts Podcast",
@@ -357,6 +390,23 @@
         "tags": [
             "example",
             "workflow"
+        ]
+    },
+    {
+        "title": "First Look at Element Binding",
+        "url": "https://youtu.be/9nntnMWZmN8",
+        "thumbnail": "https://i3.ytimg.com/vi/9nntnMWZmN8/maxresdefault.jpg",
+        "author": "7fold Design Technology",
+        "authorUrl": "https://www.youtube.com/channel/UC7eTGSIVovsDYuYw3YFLn8w",
+        "description": "Take a first look at the improved workflow in Rhino Inside that maintains a persistent connection to elements created in Revit such as walls, levels, grids, adaptive components, and more. This new feature is referred to as 'element binding' and is an essential stepping stone to collaborating with colleagues with Rhino Inside. No more re-generating model elements by accident the moment you open up a script for the first time.",
+        "kinds": [
+            "tutorial",
+            "podcast",
+            "video"
+        ],
+        "tags": [
+            "podcast",
+            "overview"
         ]
     },
     {
@@ -705,6 +755,24 @@
         "author": "VisualARQ",
         "authorUrl": "https://www.visualarq.com/",
         "description": "This video shows a sneak preview of VisualARQ 3 version (WIP- Work in progress), running inside Revit using Rhino.Inside technology, available in Rhino 7 (WIP)",
+        "kinds": [
+            "example",
+            "tutorial",
+            "video"
+        ],
+        "tags": [
+            "tutorial",
+            "BIM",
+            "plug-in"
+        ]
+    },
+    {
+        "title": "Grasshopper BIM objects with VisualARQ",
+        "url": "https://youtu.be/y6B2W_gggME",
+        "thumbnail": "https://i3.ytimg.com/vi/y6B2W_gggME/maxresdefault.jpg",
+        "author": "VisualARQ",
+        "authorUrl": "https://www.visualarq.com/",
+        "description": "This video tutorial shows how to work with the VisualARQ Grasshopper styles (VisualARQ objects driven by Grasshopper definitions), running VisualARQ inside Revit. This way, you can work with the VisualARQ parametric objects, and generate them in Revit automatically as Revit Furniture object types. This connection is possible with the VisualARQ Grasshopper components.",
         "kinds": [
             "example",
             "tutorial",

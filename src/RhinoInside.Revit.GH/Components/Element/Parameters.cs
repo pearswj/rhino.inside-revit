@@ -25,43 +25,41 @@ namespace RhinoInside.Revit.GH
 
           if (parameter.Definition is DB.Definition definition)
           {
-            switch (definition.ParameterType)
+            var dataType = definition.GetDataType();
+
+            if (dataType == SpecType.Boolean.YesNo)
+              return new GH_Boolean(integer != 0);
+
+            if (parameter.Id.TryGetBuiltInParameter(out var builtInInteger))
             {
-              case DB.ParameterType.Invalid:
-                if (parameter.Id.TryGetBuiltInParameter(out var builtInInteger))
-                {
-                  switch (builtInInteger)
-                  {
-                    case DB.BuiltInParameter.AUTO_JOIN_CONDITION:         return new Types.CurtainGridJoinCondition((DBX.CurtainGridJoinCondition) integer);
-                    case DB.BuiltInParameter.AUTO_JOIN_CONDITION_WALL:    return new Types.CurtainGridJoinCondition((DBX.CurtainGridJoinCondition) integer);
-                    case DB.BuiltInParameter.SPACING_LAYOUT_U:            return new Types.CurtainGridLayout((DBX.CurtainGridLayout) integer);
-                    case DB.BuiltInParameter.SPACING_LAYOUT_1:            return new Types.CurtainGridLayout((DBX.CurtainGridLayout) integer);
-                    case DB.BuiltInParameter.SPACING_LAYOUT_VERT:         return new Types.CurtainGridLayout((DBX.CurtainGridLayout) integer);
-                    case DB.BuiltInParameter.SPACING_LAYOUT_V:            return new Types.CurtainGridLayout((DBX.CurtainGridLayout) integer);
-                    case DB.BuiltInParameter.SPACING_LAYOUT_2:            return new Types.CurtainGridLayout((DBX.CurtainGridLayout) integer);
-                    case DB.BuiltInParameter.SPACING_LAYOUT_HORIZ:        return new Types.CurtainGridLayout((DBX.CurtainGridLayout) integer);
-                    case DB.BuiltInParameter.WRAPPING_AT_INSERTS_PARAM:   return new Types.WallWrapping((DBX.WallWrapping) integer);
-                    case DB.BuiltInParameter.WRAPPING_AT_ENDS_PARAM:      return new Types.WallWrapping((DBX.WallWrapping) integer);
-                    case DB.BuiltInParameter.WALL_STRUCTURAL_USAGE_PARAM: return new Types.StructuralWallUsage((DB.Structure.StructuralWallUsage) integer);
-                    case DB.BuiltInParameter.WALL_KEY_REF_PARAM:          return new Types.WallLocationLine((DB.WallLocationLine) integer);
-                    case DB.BuiltInParameter.FUNCTION_PARAM:              return new Types.WallFunction((DB.WallFunction) integer);
-                  }
+              switch (builtInInteger)
+              {
+                case DB.BuiltInParameter.AUTO_JOIN_CONDITION:         return new Types.CurtainGridJoinCondition((DBX.CurtainGridJoinCondition) integer);
+                case DB.BuiltInParameter.AUTO_JOIN_CONDITION_WALL:    return new Types.CurtainGridJoinCondition((DBX.CurtainGridJoinCondition) integer);
+                case DB.BuiltInParameter.SPACING_LAYOUT_U:            return new Types.CurtainGridLayout((DBX.CurtainGridLayout) integer);
+                case DB.BuiltInParameter.SPACING_LAYOUT_1:            return new Types.CurtainGridLayout((DBX.CurtainGridLayout) integer);
+                case DB.BuiltInParameter.SPACING_LAYOUT_VERT:         return new Types.CurtainGridLayout((DBX.CurtainGridLayout) integer);
+                case DB.BuiltInParameter.SPACING_LAYOUT_V:            return new Types.CurtainGridLayout((DBX.CurtainGridLayout) integer);
+                case DB.BuiltInParameter.SPACING_LAYOUT_2:            return new Types.CurtainGridLayout((DBX.CurtainGridLayout) integer);
+                case DB.BuiltInParameter.SPACING_LAYOUT_HORIZ:        return new Types.CurtainGridLayout((DBX.CurtainGridLayout) integer);
+                case DB.BuiltInParameter.WRAPPING_AT_INSERTS_PARAM:   return new Types.WallWrapping((DBX.WallWrapping) integer);
+                case DB.BuiltInParameter.WRAPPING_AT_ENDS_PARAM:      return new Types.WallWrapping((DBX.WallWrapping) integer);
+                case DB.BuiltInParameter.WALL_STRUCTURAL_USAGE_PARAM: return new Types.StructuralWallUsage((DB.Structure.StructuralWallUsage) integer);
+                case DB.BuiltInParameter.WALL_KEY_REF_PARAM:          return new Types.WallLocationLine((DB.WallLocationLine) integer);
+                case DB.BuiltInParameter.FUNCTION_PARAM:              return new Types.WallFunction((DB.WallFunction) integer);
+              }
 
-                  var builtInIntegerName = builtInInteger.ToString();
-                  if (builtInIntegerName.Contains("COLOR_") || builtInIntegerName.Contains("_COLOR_") || builtInIntegerName.Contains("_COLOR"))
-                  {
-                    int r = integer % 256;
-                    integer /= 256;
-                    int g = integer % 256;
-                    integer /= 256;
-                    int b = integer % 256;
+              var builtInIntegerName = builtInInteger.ToString();
+              if (builtInIntegerName.Contains("COLOR_") || builtInIntegerName.Contains("_COLOR_") || builtInIntegerName.Contains("_COLOR"))
+              {
+                int r = integer % 256;
+                integer /= 256;
+                int g = integer % 256;
+                integer /= 256;
+                int b = integer % 256;
 
-                    return new GH_Colour(System.Drawing.Color.FromArgb(r, g, b));
-                  }
-                } 
-                break;
-              case DB.ParameterType.YesNo:
-                return new GH_Boolean(integer != 0);
+                return new GH_Colour(System.Drawing.Color.FromArgb(r, g, b));
+              }
             }
           }
 
@@ -154,12 +152,21 @@ namespace RhinoInside.Revit.GH
 
     internal static double AsDoubleInRhinoUnits(this DB.Parameter parameter)
     {
-      return UnitConverter.InRhinoUnits(parameter.AsDouble(), parameter.Definition.ParameterType);
+      var value = parameter.AsDouble();
+
+      return SpecType.IsMeasurableSpec(parameter.Definition.GetDataType(), out var spec) ?
+        UnitConverter.InRhinoUnits(value, spec) :
+        value;
     }
 
     internal static bool SetDoubleInRhinoUnits(this DB.Parameter parameter, double value)
     {
-      return parameter.Set(UnitConverter.InHostUnits(value, parameter.Definition.ParameterType));
+      return parameter.Set
+      (
+        SpecType.IsMeasurableSpec(parameter.Definition.GetDataType(), out var spec) ?
+        UnitConverter.InHostUnits(value, spec) :
+        value
+      );
     }
 
     internal static DB.Parameter GetParameter(IGH_ActiveObject obj, DB.Element element, IGH_Goo goo)
@@ -170,7 +177,8 @@ namespace RhinoInside.Revit.GH
       if (goo is Types.ParameterValue value)
         goo = new Types.ParameterKey(value.Document, value.Value.Id);
 
-      if (goo is Types.ParameterKey parameterKey)
+      if (goo is Types.ParameterId id) parameter = element.GetParameter(id.Value);
+      else if (goo is Types.ParameterKey parameterKey)
       {
         if (parameterKey.Document.Equals(element.Document)) key = parameterKey.Id;
         else
@@ -180,9 +188,9 @@ namespace RhinoInside.Revit.GH
             case DBX.ParameterClass.BuiltIn:
               parameter = parameterKey.Id.TryGetBuiltInParameter(out var builtInParameter) ? element.get_Parameter(builtInParameter) : default; break;
             case DBX.ParameterClass.Project:
-              parameter = element.GetParameter(parameterKey.Name, parameterKey.Definition?.ParameterType ?? DB.ParameterType.Invalid, DBX.ParameterClass.Project); break;
+              parameter = element.GetParameter(parameterKey.Name, parameterKey.Definition?.GetDataType() ?? SpecType.Empty, DBX.ParameterClass.Project); break;
             case DBX.ParameterClass.Family:
-              parameter = element.GetParameter(parameterKey.Name, parameterKey.Definition?.ParameterType ?? DB.ParameterType.Invalid, DBX.ParameterClass.Family); break;
+              parameter = element.GetParameter(parameterKey.Name, parameterKey.Definition?.GetDataType() ?? SpecType.Empty, DBX.ParameterClass.Family); break;
             case DBX.ParameterClass.Shared:
               parameter = element.get_Parameter(parameterKey.GuidValue.Value); break;
           }
@@ -258,6 +266,7 @@ namespace RhinoInside.Revit.GH
 namespace RhinoInside.Revit.GH.Components
 {
   using External.DB.Extensions;
+  using Grasshopper.Kernel.Parameters;
 
   public class ElementParameterGet : Component
   {
@@ -287,20 +296,15 @@ namespace RhinoInside.Revit.GH.Components
 
     protected override void TrySolveInstance(IGH_DataAccess DA)
     {
-      DB.Element element = null;
-      if (!DA.GetData("Element", ref element))
-        return;
+      if (!Params.GetData(DA, "Element", out Types.Element element, x => x.IsValid)) return;
+      if (!Params.GetData(DA, "ParameterKey", out IGH_Goo key)) return;
 
-      IGH_Goo parameterKey = null;
-      if (!DA.GetData("ParameterKey", ref parameterKey))
-        return;
-
-      var parameter = ParameterUtils.GetParameter(this, element, parameterKey);
+      var parameter = ParameterUtils.GetParameter(this, element.Value, key);
       DA.SetData("ParameterValue", parameter);
     }
   }
 
-  public class ElementParameterSet : TransactionsComponent
+  public class ElementParameterSet : TransactionalChainComponent
   {
     public override Guid ComponentGuid => new Guid("8F1EE110-7FDA-49E0-BED4-E8E0227BC021");
     public override GH_Exposure Exposure => GH_Exposure.quarternary;
@@ -315,57 +319,72 @@ namespace RhinoInside.Revit.GH.Components
     )
     { }
 
-    protected override void RegisterInputParams(GH_InputParamManager manager)
+    protected override ParamDefinition[] Inputs => inputs;
+    static readonly ParamDefinition[] inputs =
     {
-      manager.AddParameter(new Parameters.Element(), "Element", "E", "Element to update", GH_ParamAccess.item);
-      manager.AddGenericParameter("ParameterKey", "K", "Element parameter to modify", GH_ParamAccess.item);
-      manager.AddGenericParameter("ParameterValue", "V", "Element parameter value", GH_ParamAccess.item);
-    }
+      new ParamDefinition
+      (
+        new Parameters.Element()
+        {
+          Name = "Element",
+          NickName = "E",
+          Description = "Element to update",
+        }
+      ),
+      new ParamDefinition
+      (
+        new Param_GenericObject()
+        {
+          Name = "ParameterKey",
+          NickName = "K",
+          Description = "Element parameter to modify",
+        }
+      ),
+      new ParamDefinition
+      (
+        new Param_GenericObject()
+        {
+          Name = "ParameterValue",
+          NickName = "V",
+          Description = "Element parameter value",
+        }
+      ),
+    };
 
-    protected override void RegisterOutputParams(GH_OutputParamManager manager)
+    protected override ParamDefinition[] Outputs => outputs;
+    static readonly ParamDefinition[] outputs =
     {
-      manager.AddParameter(new Parameters.Element(), "Element", "E", "Updated Element", GH_ParamAccess.item);
-    }
+      new ParamDefinition
+      (
+        new Parameters.Element()
+        {
+          Name = "Element",
+          NickName = "E",
+          Description = "Updated Element",
+        }
+      ),
+    };
 
     protected override void TrySolveInstance(IGH_DataAccess DA)
     {
-      DB.Element element = null;
-      if (!DA.GetData("Element", ref element))
-        return;
+      if (!Params.GetData(DA, "Element", out Types.Element element, x => x.IsValid)) return;
+      if (!Params.GetData(DA, "ParameterKey", out IGH_Goo key)) return;
+      if (!Params.GetData(DA, "ParameterValue", out IGH_Goo value)) return;
 
-      IGH_Goo key = null;
-      if (!DA.GetData("ParameterKey", ref key))
-        return;
-
-      IGH_Goo value = null;
-      if (!DA.GetData("ParameterValue", ref value))
-        return;
-
-      var parameter = ParameterUtils.GetParameter(this, element, key);
+      var parameter = ParameterUtils.GetParameter(this, element.Value, key);
       if (parameter is null)
         return;
 
       StartTransaction(element.Document);
 
-      try
-      {
-        if (parameter.Set(value))
-          DA.SetData("Element", element);
-        else
-          AddRuntimeMessage(GH_RuntimeMessageLevel.Error, $"Failed to set parameter '{parameter.Definition.Name}' : '{value}' is not a valid value.");
-      }
-      catch (InvalidCastException)
-      {
-        AddRuntimeMessage(GH_RuntimeMessageLevel.Error, $"Failed to cast from {value.TypeName} to {parameter.StorageType}.");
-      }
-      catch (Autodesk.Revit.Exceptions.InvalidOperationException e)
-      {
-        AddRuntimeMessage(GH_RuntimeMessageLevel.Error, $"Failed to set parameter '{parameter.Definition.Name}' : {e.Message}");
-      }
+      if (parameter.Set(value))
+        DA.SetData("Element", element);
+      else
+        AddRuntimeMessage(GH_RuntimeMessageLevel.Error, $"Unable to set parameter '{parameter.Definition.Name}' : '{value}' is not a valid value.");
     }
   }
 
-  public class ElementParameterReset : TransactionBaseComponent
+  public class ElementParameterReset : TransactionalChainComponent
   {
     public override Guid ComponentGuid => new Guid("2C374E6D-A547-45AC-B77D-04DD61317622");
     public override GH_Exposure Exposure => GH_Exposure.quarternary | GH_Exposure.obscure;
@@ -381,47 +400,58 @@ namespace RhinoInside.Revit.GH.Components
     )
     { }
 
-    protected override void RegisterInputParams(GH_InputParamManager manager)
+    protected override ParamDefinition[] Inputs => inputs;
+    static readonly ParamDefinition[] inputs =
     {
-      manager.AddParameter(new Parameters.Element(), "Element", "E", "Element to update", GH_ParamAccess.item);
-      manager.AddGenericParameter("ParameterKey", "K", "Element parameter to reset", GH_ParamAccess.item);
-    }
+      new ParamDefinition
+      (
+        new Parameters.Element()
+        {
+          Name = "Element",
+          NickName = "E",
+          Description = "Element to update",
+        }
+      ),
+      new ParamDefinition
+      (
+        new Param_GenericObject()
+        {
+          Name = "ParameterKey",
+          NickName = "K",
+          Description = "Element parameter to modify",
+        }
+      ),
+    };
 
-    protected override void RegisterOutputParams(GH_OutputParamManager manager)
+    protected override ParamDefinition[] Outputs => outputs;
+    static readonly ParamDefinition[] outputs =
     {
-      manager.AddParameter(new Parameters.Element(), "Element", "E", "Updated Element", GH_ParamAccess.item);
-    }
+      new ParamDefinition
+      (
+        new Parameters.Element()
+        {
+          Name = "Element",
+          NickName = "E",
+          Description = "Updated Element",
+        }
+      ),
+    };
 
     protected override void TrySolveInstance(IGH_DataAccess DA)
     {
-      DB.Element element = null;
-      if (!DA.GetData("Element", ref element))
-        return;
+      if (!Params.GetData(DA, "Element", out Types.Element element, x => x.IsValid)) return;
+      if (!Params.GetData(DA, "ParameterKey", out IGH_Goo key)) return;
 
-      IGH_Goo key = null;
-      if (!DA.GetData("ParameterKey", ref key))
-        return;
-
-      var parameter = ParameterUtils.GetParameter(this, element, key);
+      var parameter = ParameterUtils.GetParameter(this, element.Value, key);
       if (parameter is null)
         return;
 
-      using (var transaction = NewTransaction(element.Document))
-      {
-        transaction.Start();
+      StartTransaction(element.Document);
 
-        if (parameter.ResetValue())
-        {
-          if (CommitTransaction(element.Document, transaction) == DB.TransactionStatus.Committed)
-            DA.SetData("Element", element);
-          else
-            AddRuntimeMessage(GH_RuntimeMessageLevel.Error, $"Failed to reset '{parameter.Definition.Name}'");
-        }
-        else
-        {
-          AddRuntimeMessage(GH_RuntimeMessageLevel.Error, $"Unable to reset '{parameter.Definition.Name}'");
-        }
-      }
+      if (!parameter.ResetValue())
+        AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, $"Unable to reset parameter '{parameter.Definition.Name}'.");
+
+      DA.SetData("Element", element);
     }
   }
 
@@ -449,38 +479,30 @@ namespace RhinoInside.Revit.GH.Components
 
     protected override void TrySolveInstance(IGH_DataAccess DA)
     {
-      DB.Element element = null;
-      if (!DA.GetData("Element", ref element))
-        return;
+      if (!Params.GetData(DA, "Element", out Types.Element element, x => x.IsValid)) return;
 
-      string parameterName = null;
-      bool noFilterName = (!DA.GetData("Name", ref parameterName) && Params.Input[1].Sources.Count == 0);
+      var filterName = Params.GetData(DA, "Name", out string parameterName);
+      var filterGroup = Params.GetData(DA, "Group", out ParameterGroup parameterGroup);
+      var filterReadOnly = Params.GetData(DA, "ReadOnly", out bool? readOnly);
 
-      var parameterGroup = ParameterGroup.Empty;
-      bool noFilterGroup = (!DA.GetData("Group", ref parameterGroup) && Params.Input[2].Sources.Count == 0);
-
-      bool readOnly = false;
-      bool noFilterReadOnly = (!DA.GetData("ReadOnly", ref readOnly) && Params.Input[3].Sources.Count == 0);
-
-      List<DB.Parameter> parameters = null;
-      if (element is object)
+      var parameters = new List<DB.Parameter>(element.Value.Parameters.Size);
+      foreach (var group in element.Value.GetParameters(DBX.ParameterClass.Any).GroupBy(x => x.Definition?.GetGroupType() ?? ParameterGroup.Empty).OrderBy(x => x.Key))
       {
-        parameters = new List<DB.Parameter>(element.Parameters.Size);
-        foreach (var group in element.GetParameters(DBX.ParameterClass.Any).GroupBy(x => x.Definition?.GetGroupType() ?? ParameterGroup.Empty).OrderBy(x => x.Key))
+        foreach (var param in group.OrderBy(x => x.Id.IntegerValue))
         {
-          foreach (var param in group.OrderBy(x => x.Id.IntegerValue))
-          {
-            if (!noFilterName && parameterName != param.Definition?.Name)
-              continue;
+          if (string.IsNullOrEmpty(param.Definition.Name))
+            continue;
 
-            if (!noFilterGroup && parameterGroup != (param.Definition?.GetGroupType() ?? ParameterGroup.Empty))
-              continue;
+          if (filterName && !param.Definition.Name.IsSymbolNameLike(parameterName))
+            continue;
 
-            if (!noFilterReadOnly && readOnly != param.IsReadOnly)
-              continue;
+          if (filterGroup && parameterGroup != (param.Definition?.GetGroupType() ?? ParameterGroup.Empty))
+            continue;
 
-            parameters.Add(param);
-          }
+          if (filterReadOnly && readOnly != param.IsReadOnly)
+            continue;
+
+          parameters.Add(param);
         }
       }
 

@@ -78,33 +78,6 @@ namespace RhinoInside.Revit.External.DB.Extensions
     }
   }
 
-  static class ParameterTypeExtension
-  {
-    public static StorageType ToStorageType(this ParameterType parameterType)
-    {
-      switch (parameterType)
-      {
-        case ParameterType.Invalid:
-          return StorageType.None;
-        case ParameterType.Text:
-        case ParameterType.MultilineText:
-        case ParameterType.URL:
-          return StorageType.String;
-        case ParameterType.YesNo:
-        case ParameterType.Integer:
-        case ParameterType.LoadClassification:
-          return StorageType.Integer;
-        case ParameterType.Material:
-        case ParameterType.FamilyType:
-        case ParameterType.Image:
-          return StorageType.ElementId;
-        case ParameterType.Number:
-        default:
-          return StorageType.Double;
-      }
-    }
-  }
-
   static class ParameterExtension
   {
     public static bool ResetValue(this Parameter parameter)
@@ -140,5 +113,63 @@ namespace RhinoInside.Revit.External.DB.Extensions
         return new Schemas.ParameterId($"autodesk.parameter.aec.revit.project:{parameter.Id.IntegerValue}");
     }
 #endif
+
+    public static IConvertible ToConvertible(this Parameter parameter)
+    {
+      switch (parameter.StorageType)
+      {
+        case StorageType.Integer:
+          var integer = parameter.AsInteger();
+
+          if (parameter.Definition is Definition definition)
+          {
+            var dataType = definition.GetDataType();
+
+            if (dataType == Schemas.SpecType.Boolean.YesNo)
+              return integer != 0;
+
+            if (parameter.Id.TryGetBuiltInParameter(out var builtInInteger))
+            {
+              var builtInIntegerName = builtInInteger.ToString();
+              if (builtInIntegerName.Contains("COLOR_") || builtInIntegerName.Contains("_COLOR_") || builtInIntegerName.Contains("_COLOR"))
+              {
+                int r = integer % 256;
+                integer /= 256;
+                int g = integer % 256;
+                integer /= 256;
+                int b = integer % 256;
+
+                return System.Drawing.Color.FromArgb(r, g, b).ToArgb();
+              }
+            }
+          }
+
+          return integer;
+
+        case StorageType.Double:
+          var value = parameter.AsDouble();
+          return Schemas.SpecType.IsMeasurableSpec(parameter.Definition.GetDataType(), out var spec) ?
+            Convert.Geometry.UnitConverter.InRhinoUnits(value, spec) :
+            value;
+
+        case StorageType.String:
+          return parameter.AsString();
+
+        case StorageType.ElementId:
+
+          var document = parameter.Element?.Document;
+          var documentGUID = document.GetFingerprintGUID();
+          var elementId = parameter.AsElementId();
+
+          return elementId.IsBuiltInId() ?
+            FullUniqueId.Format(documentGUID, UniqueId.Format(Guid.Empty, elementId.IntegerValue)) :
+            document?.GetElement(elementId) is Element element ?
+            FullUniqueId.Format(documentGUID, element.UniqueId) :
+            FullUniqueId.Format(Guid.Empty, UniqueId.Format(Guid.Empty, ElementId.InvalidElementId.IntegerValue));
+
+        default:
+          throw new NotImplementedException();
+      }
+    }
   }
 }

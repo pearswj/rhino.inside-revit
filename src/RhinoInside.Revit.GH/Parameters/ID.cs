@@ -59,7 +59,7 @@ namespace RhinoInside.Revit.GH.Parameters
 
     public DataGrouping Grouping { get; set; } = DataGrouping.None;
 
-    public sealed override bool Read(GH_IReader reader)
+    public override bool Read(GH_IReader reader)
     {
       if (!base.Read(reader))
         return false;
@@ -70,7 +70,7 @@ namespace RhinoInside.Revit.GH.Parameters
 
       return true;
     }
-    public sealed override bool Write(GH_IWriter writer)
+    public override bool Write(GH_IWriter writer)
     {
       if (!base.Write(writer))
         return false;
@@ -79,39 +79,6 @@ namespace RhinoInside.Revit.GH.Parameters
         writer.SetInt32("Grouping", (int) Grouping);
 
       return true;
-    }
-
-    public override void ClearData()
-    {
-      base.ClearData();
-
-      if (PersistentData.IsEmpty)
-        return;
-
-      foreach (var goo in PersistentData.OfType<T>())
-        goo?.UnloadElement();
-    }
-
-    protected override void LoadVolatileData()
-    {
-      if (SourceCount == 0)
-      {
-        foreach (var branch in m_data.Branches)
-        {
-          for (int i = 0; i < branch.Count; i++)
-          {
-            var item = branch[i];
-            if (item?.IsReferencedElement ?? false)
-            {
-              if (!item.LoadElement())
-              {
-                AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, $"A referenced {item.TypeName} could not be found in the Revit document.");
-                branch[i] = null;
-              }
-            }
-          }
-        }
-      }
     }
 
     protected override void ProcessVolatileData()
@@ -190,7 +157,7 @@ namespace RhinoInside.Revit.GH.Parameters
     public override bool AppendMenuItems(ToolStripDropDown menu)
     {
       // Name
-      if (Attributes.IsTopLevel ? false : IconCapableUI)
+      if (IconCapableUI && Attributes.IsTopLevel)
         Menu_AppendObjectNameEx(menu);
       else
         Menu_AppendObjectName(menu);
@@ -203,7 +170,7 @@ namespace RhinoInside.Revit.GH.Parameters
       }
 
       // Enabled
-      if (this is IGH_Component || (this is IGH_Param param && param.Kind == GH_ParamKind.floating))
+      if (Kind == GH_ParamKind.floating)
         Menu_AppendEnableItem(menu);
 
       // Bake
@@ -279,6 +246,7 @@ namespace RhinoInside.Revit.GH.Parameters
     {
       base.Menu_AppendPreProcessParameter(menu);
 
+#if DEBUG
       var Group = Menu_AppendItem(menu, "Group by");
 
       Group.Checked = Grouping != DataGrouping.None;
@@ -286,6 +254,7 @@ namespace RhinoInside.Revit.GH.Parameters
       Menu_AppendItem(Group.DropDown, "Workset",       (s, a) => Menu_GroupBy(DataGrouping.Workset),       true, (Grouping & DataGrouping.Workset) != 0);
       Menu_AppendItem(Group.DropDown, "Design Option", (s, a) => Menu_GroupBy(DataGrouping.DesignOption),  true, (Grouping & DataGrouping.DesignOption) != 0);
       Menu_AppendItem(Group.DropDown, "Category",      (s, a) => Menu_GroupBy(DataGrouping.Category),      true, (Grouping & DataGrouping.Category) != 0);
+#endif
     }
 
     private void Menu_GroupBy(DataGrouping value)
@@ -307,23 +276,6 @@ namespace RhinoInside.Revit.GH.Parameters
 
     protected override void PrepareForPrompt() { }
     protected override void RecoverFromPrompt() { }
-
-    protected override bool Prompt_ManageCollection(GH_Structure<T> values)
-    {
-      foreach (var item in values.AllData(true))
-      {
-        if (item.IsValid)
-          continue;
-
-        if (item is Types.IGH_ElementId elementId)
-        {
-          if (elementId.IsReferencedElement)
-            elementId.LoadElement();
-        }
-      }
-
-      return base.Prompt_ManageCollection(values);
-    }
     #endregion
 
     #region IGH_ElementIdParam
@@ -335,15 +287,18 @@ namespace RhinoInside.Revit.GH.Parameters
       ICollection<DB.ElementId> modified
     )
     {
-      if (DataType != GH_ParamData.local)
-        return false;
+      if (Kind != GH_ParamKind.output)
+      {
+        if (DataType != GH_ParamData.local)
+          return false;
 
-      if (Phase == GH_SolutionPhase.Blank)
-        CollectData();
+        if (Phase == GH_SolutionPhase.Blank)
+          CollectData();
+      }
 
       foreach (var data in VolatileData.AllData(true).OfType<Types.IGH_ElementId>())
       {
-        if (!data.IsElementLoaded)
+        if (!data.Id.IsValid() || !data.Document.IsValid())
           continue;
 
         if (!doc.Equals(data.Document))

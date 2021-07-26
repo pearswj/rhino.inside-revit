@@ -17,7 +17,7 @@ namespace RhinoInside.Revit.GH.Types
     #region IGH_Goo
     public override bool IsValid => (Id?.TryGetBuiltInCategory(out var _) == true) || base.IsValid;
     protected override Type ScriptVariableType => typeof(DB.Category);
-    public override object ScriptVariable() => Value;
+    public override object ScriptVariable() => APIObject;
 
     public sealed override bool CastFrom(object source)
     {
@@ -38,12 +38,17 @@ namespace RhinoInside.Revit.GH.Types
           document = element.Document;
           categoryId = element.Id;
         }
+        else if (source is CategoryId id)
+        {
+          source = (DB.BuiltInCategory) id.Value;
+        }
         else source = goo.ScriptVariable();
       }
 
       switch (source)
       {
         case int i:               categoryId = new DB.ElementId(i); break;
+        case DB.BuiltInCategory bic: categoryId = new DB.ElementId(bic); break;
         case DB.ElementId id:     categoryId = id; break;
         case DB.Category c:       SetValue(c.Document(), c.Id); return true;
         case DB.GraphicsStyle s:  SetValue(s.Document, s.GraphicsStyleCategory.Id); return true;
@@ -69,11 +74,27 @@ namespace RhinoInside.Revit.GH.Types
     {
       if (typeof(Q).IsAssignableFrom(typeof(DB.Category)))
       {
-        target = (Q) (object) Value;
+        target = (Q) (object) APIObject;
         return true;
       }
 
-      return base.CastTo<Q>(out target);
+      if (typeof(Q).IsAssignableFrom(typeof(CategoryId)))
+      {
+        var categoryId = new CategoryId();
+        if (APIObject.Id.TryGetBuiltInCategory(out var bic))
+        {
+          categoryId.Value = bic;
+          target = (Q) (object) categoryId;
+          return true;
+        }
+        else
+        {
+          target = (Q) (object) default(Q);
+          return false;
+        }
+      }
+
+      return base.CastTo(out target);
     }
 
     new class Proxy : Element.Proxy
@@ -82,10 +103,10 @@ namespace RhinoInside.Revit.GH.Types
 
       public Proxy(Category c) : base(c) { (this as IGH_GooProxy).UserString = FormatInstance(); }
 
-      public override bool IsParsable() => !owner.IsReferencedElement || owner.Document is object;
+      public override bool IsParsable() => !owner.IsReferencedData || owner.Document is object;
       public override string FormatInstance()
       {
-        if (owner.IsReferencedElement && owner.IsElementLoaded)
+        if (owner.IsReferencedData && owner.IsReferencedDataLoaded)
           return owner.DisplayName;
 
         return base.FormatInstance();
@@ -94,7 +115,7 @@ namespace RhinoInside.Revit.GH.Types
       {
         var doc = owner.Document ?? Revit.ActiveUIDocument.Document;
 
-        if (Enum.TryParse(str, out DB.BuiltInCategory builtInCategory))
+        if (Enum.TryParse(str, out DB.BuiltInCategory builtInCategory) && builtInCategory.IsValid())
           owner.SetValue(doc, new DB.ElementId(builtInCategory));
         else if (str == string.Empty)
           owner.SetValue(default, new DB.ElementId(DB.BuiltInCategory.INVALID));
@@ -112,8 +133,8 @@ namespace RhinoInside.Revit.GH.Types
         else
           return false;
 
-        owner.UnloadElement();
-        return owner.LoadElement();
+        owner.UnloadReferencedData();
+        return owner.LoadReferencedData();
       }
 
       #region Misc
@@ -130,7 +151,7 @@ namespace RhinoInside.Revit.GH.Types
       #region Category
       const string Category = "Category";
 
-      DB.Category category => owner.Value;
+      DB.Category category => owner.APIObject;
 
       [System.ComponentModel.Category(Category), System.ComponentModel.Description("Parent category of this category.")]
       public string Parent => category?.Parent?.Name;
@@ -162,14 +183,24 @@ namespace RhinoInside.Revit.GH.Types
     #endregion
 
     #region DocumentObject
-    public new DB.Category Value => IsElementLoaded ? Document.GetCategory(Id) : default;
+    internal DB.Category APIObject => IsReferencedDataLoaded ? Document.GetCategory(Id) : default;
+
+    protected override void ResetValue()
+    {
+      // Some categories are slow to found,
+      // Category referenmce seem to be generated on demand and the reference become invalid "sudently".
+      // so we can not catch the reference but the name is used many times in UI and needs to be fast.
+      fullName = default;
+
+      base.ResetValue();
+    }
 
     public override string DisplayName
     {
       get
       {
-        if (Value is DB.Category category)
-          return category.FullName();
+        if (FullName is string full)
+          return full;
 
         return base.DisplayName;
       }
@@ -237,7 +268,7 @@ namespace RhinoInside.Revit.GH.Types
       };
 
       if (0 < value.Value && value.Value < 17)
-        return size[value.Value] * RhinoMath.UnitScale(Rhino.UnitSystem.Inches, Rhino.UnitSystem.Millimeters);
+        return Convert.Geometry.UnitConverter.Convert(size[value.Value], Rhino.UnitSystem.Inches, Rhino.UnitSystem.Millimeters);
 
       return 0.0;
     }
@@ -258,7 +289,7 @@ namespace RhinoInside.Revit.GH.Types
       const string RootLayerName = "Revit";
       var PS = Layer.PathSeparator;
 
-      if (Value is DB.Category category)
+      if (APIObject is DB.Category category)
       {
         var linetypeIndex = -1;
         if (ProjectionLinePattern is LinePatternElement linePattern)
@@ -295,7 +326,7 @@ namespace RhinoInside.Revit.GH.Types
             // Create Category Type Layer
             if (category.Parent is null)
             {
-              if (CategoryType.NamedValues.TryGetValue((int) category.CategoryType, out var typeName))
+              if (Types.CategoryType.NamedValues.TryGetValue((int) category.CategoryType, out var typeName))
               {
                 var type = doc.Layers.FindByFullPath($"{RootLayerName}::{category.CategoryType}", -1);
                 if (type < 0)
@@ -368,15 +399,40 @@ namespace RhinoInside.Revit.GH.Types
     #region Properties
     public override string Name
     {
-      get => base.Value?.Name ?? Value?.Name;
+      get
+      {
+        if (FullName is string full)
+        {
+          var segments = full.Split('\\');
+          return segments[segments.Length - 1];
+        }
+
+        return default;
+      }
     }
+
+    string fullName;
+    public string FullName
+    {
+      get
+      {
+        if (fullName is null && APIObject is DB.Category category)
+          fullName = category.FullName();
+
+        return fullName;
+      }
+    }
+
+    public DB.CategoryType CategoryType => APIObject?.CategoryType ?? DB.CategoryType.Invalid;
+
+    public bool? IsTagCategory => APIObject?.IsTagCategory;
 
     public System.Drawing.Color? LineColor
     {
-      get => Value?.LineColor.ToColor();
+      get => APIObject?.LineColor.ToColor();
       set
       {
-        if (value is object && Value is DB.Category category)
+        if (value is object && APIObject is DB.Category category)
         {
           using (var color = value.Value.ToColor())
           {
@@ -389,12 +445,12 @@ namespace RhinoInside.Revit.GH.Types
 
     public Material Material
     {
-      get => Value is DB.Category category ? new Material(category.Material) : default;
+      get => APIObject is DB.Category category ? new Material(category.Material) : default;
       set
       {
-        if (value is object && Value is DB.Category category)
+        if (value is object && APIObject is DB.Category category)
         {
-          AssertValidDocument(value.Document, nameof(Material));
+          AssertValidDocument(value, nameof(Material));
           if ((category.Material?.Id ?? DB.ElementId.InvalidElementId) != value.Id)
             category.Material = value.Value;
         }
@@ -405,7 +461,7 @@ namespace RhinoInside.Revit.GH.Types
     {
       get
       {
-        if (Value is DB.Category category)
+        if (APIObject is DB.Category category)
         {
           if (category.GetGraphicsStyle(DB.GraphicsStyleType.Projection) is DB.GraphicsStyle _)
             return category.GetLineWeight(DB.GraphicsStyleType.Projection);
@@ -415,7 +471,7 @@ namespace RhinoInside.Revit.GH.Types
       }
       set
       {
-        if (value is object && Value is DB.Category category)
+        if (value is object && APIObject is DB.Category category)
         {
           if (category.GetGraphicsStyle(DB.GraphicsStyleType.Projection) is DB.GraphicsStyle _)
           {
@@ -430,7 +486,7 @@ namespace RhinoInside.Revit.GH.Types
     {
       get
       {
-        if (Value is DB.Category category)
+        if (APIObject is DB.Category category)
         {
           if (category.GetGraphicsStyle(DB.GraphicsStyleType.Cut) is DB.GraphicsStyle _)
             return category.GetLineWeight(DB.GraphicsStyleType.Cut);
@@ -440,7 +496,7 @@ namespace RhinoInside.Revit.GH.Types
       }
       set
       {
-        if (value is object && Value is DB.Category category)
+        if (value is object && APIObject is DB.Category category)
         {
           if (category.GetGraphicsStyle(DB.GraphicsStyleType.Cut) is DB.GraphicsStyle _)
           {
@@ -455,7 +511,7 @@ namespace RhinoInside.Revit.GH.Types
     {
       get
       {
-        if (Value is DB.Category category)
+        if (APIObject is DB.Category category)
         {
           if (category.GetGraphicsStyle(DB.GraphicsStyleType.Projection) is DB.GraphicsStyle style)
             return new LinePatternElement(style.Document, category.GetLinePatternId(DB.GraphicsStyleType.Projection));
@@ -465,9 +521,9 @@ namespace RhinoInside.Revit.GH.Types
       }
       set
       {
-        if (value is object && Value is DB.Category category)
+        if (value is object && APIObject is DB.Category category)
         {
-          AssertValidDocument(value.Document, nameof(ProjectionLinePattern));
+          AssertValidDocument(value, nameof(ProjectionLinePattern));
           if (category.GetGraphicsStyle(DB.GraphicsStyleType.Projection) is DB.GraphicsStyle)
           {
             if (category.GetLinePatternId(DB.GraphicsStyleType.Projection) != value.Id)
@@ -481,7 +537,7 @@ namespace RhinoInside.Revit.GH.Types
     {
       get
       {
-        if (Value is DB.Category category)
+        if (APIObject is DB.Category category)
         {
           if (category.GetGraphicsStyle(DB.GraphicsStyleType.Cut) is DB.GraphicsStyle style)
             return new LinePatternElement(style.Document, category.GetLinePatternId(DB.GraphicsStyleType.Cut));
@@ -491,9 +547,9 @@ namespace RhinoInside.Revit.GH.Types
       }
       set
       {
-        if (value is object && Value is DB.Category category)
+        if (value is object && APIObject is DB.Category category)
         {
-          AssertValidDocument(value.Document, nameof(CutLinePattern));
+          AssertValidDocument(value, nameof(CutLinePattern));
           if (category.GetGraphicsStyle(DB.GraphicsStyleType.Cut) is DB.GraphicsStyle)
           {
             if (category.GetLinePatternId(DB.GraphicsStyleType.Cut) != value.Id)

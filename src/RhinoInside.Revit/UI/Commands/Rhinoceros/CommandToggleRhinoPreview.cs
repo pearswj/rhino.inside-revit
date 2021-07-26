@@ -13,7 +13,7 @@ namespace RhinoInside.Revit.UI
     public static void CreateUI(RibbonPanel ribbonPanel)
     {
 #if REVIT_2018
-      var buttonData = NewPushButtonData<CommandToggleRhinoPreview, NeedsActiveDocument<AvailableWhenRhinoReady>>
+      var buttonData = NewPushButtonData<CommandToggleRhinoPreview, NeedsActiveDocument<Availability>>
       (
         name: CommandName,
         iconName: "Ribbon.Grasshopper.Preview_Off.png",
@@ -27,19 +27,16 @@ namespace RhinoInside.Revit.UI
         ButtonSetImages(false);
       }
 
-      CommandStart.AddinStarted += CommandStart_AddinStarted;
+      AssemblyResolver.References["RhinoCommon"].Activated += RhinoCommon_AssemblyActivated;
 #endif
     }
 
 #if REVIT_2018
-    private static void CommandStart_AddinStarted(object sender, CommandStart.AddinStartedArgs e)
+    private static void RhinoCommon_AssemblyActivated(object sender, AssemblyLoadEventArgs args)
     {
       DocumentPreviewServer.ActiveDocumentChanged += DocumentPreviewServer_ActiveDocumentChanged;
-      CommandStart.AddinStarted -= CommandStart_AddinStarted;
     }
-#endif
 
-#if REVIT_2018
     static void ButtonSetImages(bool status)
     {
       if (RestoreButton(CommandName) is PushButton button)

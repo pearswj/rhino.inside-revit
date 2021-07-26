@@ -6,7 +6,7 @@ using Autodesk.Revit.UI.Selection;
 using Grasshopper.GUI;
 using Grasshopper.Kernel;
 using Grasshopper.Kernel.Data;
-using Grasshopper.Kernel.Types;
+using Rhino.Display;
 using Rhino.Geometry;
 using RhinoInside.Revit.External.DB.Extensions;
 using RhinoInside.Revit.External.UI.Selection;
@@ -19,11 +19,19 @@ namespace RhinoInside.Revit.GH.Parameters
     IGH_PreviewObject,
     ISelectionFilter
     where T : class, Types.IGH_GraphicalElement
+    where R : DB.Element
   {
     protected GraphicalElementT(string name, string nickname, string description, string category, string subcategory) :
     base(name, nickname, description, category, subcategory)
     {
       ObjectChanged += OnObjectChanged;
+    }
+
+    protected override T PreferredCast(object data)
+    {
+      return data is DB.Element element && AllowElement(element) ?
+             Types.GraphicalElement.FromElement(element) as T :
+             null;
     }
 
     #region IGH_PreviewObject
@@ -35,7 +43,7 @@ namespace RhinoInside.Revit.GH.Parameters
     #endregion
 
     #region ISelectionFilter
-    public virtual bool AllowElement(DB.Element elem) => elem is R;
+    public virtual bool AllowElement(DB.Element elem) => elem is R && Types.GraphicalElement.IsValidElement(elem);
     public bool AllowReference(DB.Reference reference, DB.XYZ position)
     {
       if (reference.ElementReferenceType == DB.ElementReferenceType.REFERENCE_TYPE_NONE)
@@ -43,17 +51,12 @@ namespace RhinoInside.Revit.GH.Parameters
 
       return false;
     }
-
     #endregion
 
     #region UI methods
     protected override GH_GetterResult Prompt_Singular(ref T value)
     {
-#if REVIT_2018
-      const ObjectType objectType = ObjectType.Subelement;
-#else
       const ObjectType objectType = ObjectType.Element;
-#endif
 
       var uiDocument = Revit.ActiveUIDocument;
       switch (uiDocument.PickObject(out var reference, objectType, this))
@@ -78,17 +81,14 @@ namespace RhinoInside.Revit.GH.Parameters
       switch (uiDocument.PickObject(out var reference, ObjectType.LinkedElement, this))
       {
         case Autodesk.Revit.UI.Result.Succeeded:
-          value = new GH_Structure<T>();
-
-          if (doc.GetElement(reference.ElementId) is DB.RevitLinkInstance instance)
+          if (Types.Element.FromReference(doc, reference) is T element)
           {
-            var linkedDoc = instance.GetLinkDocument();
-            var element = Types.Element.FromElementId(linkedDoc, reference.LinkedElementId) as T;
-            value.Append(element, new GH_Path(0));
-
+            value = new GH_Structure<T>();
+            value.Append(element);
             return GH_GetterResult.success;
           }
           break;
+
         case Autodesk.Revit.UI.Result.Cancelled:
           return GH_GetterResult.cancel;
       }
@@ -137,20 +137,13 @@ namespace RhinoInside.Revit.GH.Parameters
         case Autodesk.Revit.UI.Result.Succeeded:
           value = new GH_Structure<T>();
 
-          var groups = references.Select
-          (
-            r =>
-            {
-              var instance = doc.GetElement(r.ElementId) as DB.RevitLinkInstance;
-              var linkedDoc = instance.GetLinkDocument();
-
-              return Types.Element.FromElementId(linkedDoc, r.LinkedElementId) as T;
-            }
-          ).GroupBy(x => x.Document);
+          var groups = references.
+            Select(r => Types.Element.FromReference(doc, r) as T).
+            GroupBy(x => x.Document);
 
           int index = 0;
           foreach (var group in groups)
-            value.AppendRange(group, new GH_Path(index));
+            value.AppendRange(group, new GH_Path(index++));
 
           return GH_GetterResult.success;
         case Autodesk.Revit.UI.Result.Cancelled:
@@ -244,6 +237,8 @@ namespace RhinoInside.Revit.GH.Parameters
 
     protected override void Menu_AppendPromptOne(ToolStripDropDown menu)
     {
+      if (Revit.ActiveUIDocument?.Document is null) return;
+
       if (SourceCount == 0)
       {
         var comboBox = BuildFilterList();
@@ -253,15 +248,16 @@ namespace RhinoInside.Revit.GH.Parameters
         comboBox.Tag = menu;
 
         Menu_AppendCustomItem(menu, comboBox);
+        Menu_AppendPromptNew(menu);
       }
-
-      Menu_AppendPromptNew(menu);
 
       Menu_AppendItem(menu, $"Set one {TypeName}", Menu_PromptOne, SourceCount == 0, false);
     }
 
     protected override void Menu_AppendPromptMore(ToolStripDropDown menu)
     {
+      if (Revit.ActiveUIDocument?.Document is null) return;
+
       var name_plural = GH_Convert.ToPlural(TypeName);
 
       Menu_AppendItem(menu, $"Set Multiple {name_plural}", Menu_PromptPlural, SourceCount == 0);
@@ -291,7 +287,7 @@ namespace RhinoInside.Revit.GH.Parameters
       //base.Menu_AppendInternaliseData(menu);
       Menu_AppendItem(menu, $"Internalise selection", Menu_InternaliseData, SourceCount > 0 || !MutableNickName, false);
 
-      if (Revit.ActiveUIDocument.Document is DB.Document activeDoc)
+      if (Revit.ActiveUIDocument?.Document is DB.Document activeDoc)
       {
         var any = ToElementIds(VolatileData).
           Where(x => activeDoc.Equals(x.Document)).
@@ -338,6 +334,12 @@ namespace RhinoInside.Revit.GH.Parameters
           RecordPersistentDataEvent("Change data");
 
           MutableNickName = true;
+          if (Kind == GH_ParamKind.floating)
+          {
+            IconDisplayMode = GH_IconDisplayMode.application;
+            Attributes?.ExpireLayout();
+          }
+
           PersistentData.Clear();
           if (data is object)
             PersistentData.Append(data);
@@ -363,6 +365,12 @@ namespace RhinoInside.Revit.GH.Parameters
           RecordPersistentDataEvent("Change data");
 
           MutableNickName = true;
+          if (Kind == GH_ParamKind.floating)
+          {
+            IconDisplayMode = GH_IconDisplayMode.application;
+            Attributes?.ExpireLayout();
+          }
+
           PersistentData.Clear();
           if (data is object)
             PersistentData.MergeStructure(data);
@@ -388,6 +396,12 @@ namespace RhinoInside.Revit.GH.Parameters
           RecordPersistentDataEvent("Change data");
 
           MutableNickName = true;
+          if (Kind == GH_ParamKind.floating)
+          {
+            IconDisplayMode = GH_IconDisplayMode.application;
+            Attributes?.ExpireLayout();
+          }
+
           PersistentData.Clear();
           if (data is object)
             PersistentData.AppendRange(data);
@@ -413,6 +427,12 @@ namespace RhinoInside.Revit.GH.Parameters
           RecordPersistentDataEvent("Change data");
 
           MutableNickName = true;
+          if (Kind == GH_ParamKind.floating)
+          {
+            IconDisplayMode = GH_IconDisplayMode.application;
+            Attributes?.ExpireLayout();
+          }
+
           PersistentData.Clear();
           if (data is object)
             PersistentData.MergeStructure(data);
@@ -438,6 +458,12 @@ namespace RhinoInside.Revit.GH.Parameters
           RecordPersistentDataEvent("Change data");
 
           MutableNickName = true;
+          if (Kind == GH_ParamKind.floating)
+          {
+            IconDisplayMode = GH_IconDisplayMode.application;
+            Attributes?.ExpireLayout();
+          }
+
           PersistentData.Clear();
           if (data is object)
             PersistentData.MergeStructure(data);
@@ -464,6 +490,12 @@ namespace RhinoInside.Revit.GH.Parameters
           RecordPersistentDataEvent("Change data");
 
           MutableNickName = true;
+          if (Kind == GH_ParamKind.floating)
+          {
+            IconDisplayMode = GH_IconDisplayMode.application;
+            Attributes?.ExpireLayout();
+          }
+
           PersistentData.Clear();
           PersistentData.AppendRange(added.Select(x => Types.Element.FromElementId(activeDoc, x)).OfType<T>());
 
@@ -496,12 +528,12 @@ namespace RhinoInside.Revit.GH.Parameters
         if
         (
           Rhino.RhinoDoc.ActiveDoc is Rhino.RhinoDoc doc &&
-          doc.Views.ActiveView is Rhino.Display.RhinoView view &&
-          view.ActiveViewport is Rhino.Display.RhinoViewport vport
+          (doc.Views.ActiveView ?? doc.Views.FirstOrDefault()) is RhinoView view &&
+          view.ActiveViewport is RhinoViewport vport
         )
         {
-          Rhinoceros.Show();
-          Rhino.RhinoApp.SetFocusToMainWindow();
+          view.BringToFront();
+          doc.Views.ActiveView = view;
 
           var cplane = vport.GetConstructionPlane();
           cplane.Plane = element.Location;
@@ -514,7 +546,7 @@ namespace RhinoInside.Revit.GH.Parameters
 
     private void Menu_InternaliseData(object sender, EventArgs e)
     {
-      RecordUndoEvent("Internalise data");
+      RecordPersistentDataEvent("Internalise data");
 
       PersistentData.Clear();
       PersistentData.MergeStructure(m_data.Duplicate());
@@ -524,6 +556,12 @@ namespace RhinoInside.Revit.GH.Parameters
       if (!MutableNickName)
       {
         MutableNickName = true;
+        if (Kind == GH_ParamKind.floating)
+        {
+          IconDisplayMode = GH_IconDisplayMode.application;
+          Attributes?.ExpireLayout();
+        }
+
         OnObjectChanged(GH_ObjectEventType.NickName);
       }
 
@@ -559,6 +597,12 @@ namespace RhinoInside.Revit.GH.Parameters
             OnObjectChanged(GH_ObjectEventType.PersistentData);
 
             MutableNickName = false;
+            if (Kind == GH_ParamKind.floating)
+            {
+              IconDisplayMode = GH_IconDisplayMode.name;
+              Attributes?.ExpireLayout();
+            }
+
             NickName = selectionFilter.Name;
             OnObjectChanged(GH_ObjectEventType.NickName);
 
@@ -576,6 +620,9 @@ namespace RhinoInside.Revit.GH.Parameters
     private ComboBox BuildFilterList()
     {
       var comboBox = new ComboBox();
+      comboBox.Items.Add("<Not Externalized>");
+      if (MutableNickName)
+        comboBox.SelectedIndex = 0;
 
       var doc = Revit.ActiveUIDocument?.Document;
       if (doc is object)
@@ -588,12 +635,9 @@ namespace RhinoInside.Revit.GH.Parameters
           filters = collector.Cast<DB.FilterElement>().OrderBy(x => x.Name).ToArray();
         }
 
-        comboBox.Items.Add("<Not Externalized>");
         comboBox.Items.Add("<Active Selection>");
 
-        if (MutableNickName)
-          comboBox.SelectedIndex = 0;
-        else if(NickName == "<Active Selection>")
+        if (!MutableNickName && NickName == "<Active Selection>")
           comboBox.SelectedIndex = 1;
 
         foreach (var filter in filters)
@@ -624,6 +668,12 @@ namespace RhinoInside.Revit.GH.Parameters
             RecordUndoEvent("Set: NickName");
             MutableNickName = comboBox.SelectedIndex == 0;
 
+            if (Kind == GH_ParamKind.floating)
+            {
+              IconDisplayMode = MutableNickName ? GH_IconDisplayMode.application : GH_IconDisplayMode.name;
+              Attributes?.ExpireLayout();
+            }
+
             PersistentData.Clear();
             if (comboBox.SelectedIndex == 0)
               PersistentData.MergeStructure(m_data);
@@ -636,6 +686,11 @@ namespace RhinoInside.Revit.GH.Parameters
               OnObjectChanged(GH_ObjectEventType.NickName);
               ExpireSolution(true);
             }
+            else
+            {
+              ClearRuntimeMessages();
+              OnDisplayExpired(false);
+            }
           }
         }
       }
@@ -647,6 +702,12 @@ namespace RhinoInside.Revit.GH.Parameters
       {
         case GH_ObjectEventType.Sources:
           MutableNickName = true;
+          if (Kind == GH_ParamKind.floating)
+          {
+            IconDisplayMode = GH_IconDisplayMode.application;
+            Attributes?.ExpireLayout();
+          }
+
           break;
       }
     }
@@ -702,14 +763,14 @@ namespace RhinoInside.Revit.GH.Parameters
                     }
                   }
                 }
+
+                var dataCount = m_data.DataCount;
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, $"{dataCount}/{dataCount + filteredElementsCount} {(dataCount != 1 ? GH_Convert.ToPlural(TypeName) : TypeName)} collected from document '{doc.GetFileName()}'");
               }
               else
               {
-                AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, $"Failed to collect '{NickName}' elements from document '{doc.Title}'");
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, $"Failed to collect '{NickName}' elements from document '{doc.GetFileName()}'");
               }
-
-              var dataCount = m_data.DataCount;
-              AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, $"{dataCount}/{dataCount + filteredElementsCount} {(dataCount != 1 ? GH_Convert.ToPlural(TypeName) : TypeName)} collected from document '{doc.Title}'");
             }
           }
         }
@@ -738,14 +799,5 @@ namespace RhinoInside.Revit.GH.Parameters
     { }
 
     protected override Types.IGH_GraphicalElement InstantiateT() => new Types.GraphicalElement();
-
-    protected override Types.IGH_GraphicalElement PreferredCast(object data)
-    {
-      return data is DB.Element element && AllowElement(element) ?
-             Types.GraphicalElement.FromElement(element) as Types.GraphicalElement:
-             null;
-    }
-
-    public override bool AllowElement(DB.Element elem) => Types.GraphicalElement.IsValidElement(elem);
   }
 }

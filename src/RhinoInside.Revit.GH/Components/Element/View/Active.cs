@@ -24,7 +24,7 @@ namespace RhinoInside.Revit.GH.Components
     protected override ParamDefinition[] Inputs => inputs;
     static readonly ParamDefinition[] inputs =
     {
-      ParamDefinition.FromParam(new Parameters.Document(), ParamVisibility.Voluntary),
+      new ParamDefinition(new Parameters.Document(), ParamRelevance.Occasional),
     };
 
     protected override ParamDefinition[] Outputs => outputs;
@@ -35,10 +35,10 @@ namespace RhinoInside.Revit.GH.Components
 
     protected override void TrySolveInstance(IGH_DataAccess DA)
     {
-      if (!Parameters.Document.GetDataOrDefault(this, DA, "Document", out var doc))
+      if (!Parameters.Document.TryGetDocumentOrCurrent(this, DA, "Document", out var doc))
         return;
 
-      DA.SetData("Active View", doc?.GetActiveGraphicalView());
+      DA.SetData("Active View", doc.Value?.GetActiveGraphicalView());
     }
   }
 }

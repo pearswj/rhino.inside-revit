@@ -13,8 +13,14 @@ namespace RhinoInside.Revit.GH.Components
     public override GH_Exposure Exposure => GH_Exposure.tertiary;
     protected override string IconTag => "S";
 
-    public FamilySave()
-    : base("Save Component Family", "Save", "Saves the Family to a given file path.", "Revit", "Family")
+    public FamilySave() : base
+    (
+      name: "Save Component Family",
+      nickname: "Save",
+      description: "Saves the Family to a given file path.",
+      category: "Revit",
+      subCategory: "Family"
+    )
     { }
 
     protected override void RegisterInputParams(GH_InputParamManager manager)
@@ -25,10 +31,10 @@ namespace RhinoInside.Revit.GH.Components
       path.FileFilter = "Family File (*.rfa)|*.rfa";
       manager[manager.AddParameter(path, "Path", "P", string.Empty, GH_ParamAccess.item)].Optional = true;
 
-      manager.AddBooleanParameter("OverrideFile", "O", "Override file on disk", GH_ParamAccess.item, false);
+      manager.AddBooleanParameter("Overwrite", "O", "Overwrite file on disk", GH_ParamAccess.item, false);
       manager.AddBooleanParameter("Compact", "C", "Compact the file", GH_ParamAccess.item, false);
       manager.AddIntegerParameter("Backups", "B", "The maximum number of backups to keep on disk", GH_ParamAccess.item, -1);
-      manager[manager.AddParameter(new Parameters.View(), "PreviewView", "PreviewView", "The view that will be used to generate the file preview", GH_ParamAccess.item)].Optional = true;
+      manager[manager.AddParameter(new Parameters.View(), "Preview View", "PV", "The view that will be used to generate the file preview", GH_ParamAccess.item)].Optional = true;
     }
 
     protected override void RegisterOutputParams(GH_OutputParamManager manager)
@@ -45,8 +51,8 @@ namespace RhinoInside.Revit.GH.Components
       var filePath = string.Empty;
       DA.GetData("Path", ref filePath);
 
-      var overrideFile = false;
-      if (!DA.GetData("OverrideFile", ref overrideFile))
+      var overwrite = false;
+      if (!DA.GetData("Overwrite", ref overwrite))
         return;
 
       var compact = false;
@@ -60,20 +66,17 @@ namespace RhinoInside.Revit.GH.Components
       if (Revit.ActiveDBDocument.EditFamily(family) is DB.Document familyDoc) using (familyDoc)
         {
           var view = default(DB.View);
-          if (DA.GetData("PreviewView", ref view))
+          if (DA.GetData("Preview View", ref view))
           {
             if (!view.Document.Equals(familyDoc))
-            {
-              AddRuntimeMessage(GH_RuntimeMessageLevel.Error, $"View '{view.Title}' is not a valid view in document {familyDoc.Title}");
-              return;
-            }
+              AddRuntimeMessage(GH_RuntimeMessageLevel.Error, $"View '{view.Title}' is not a valid view in document {familyDoc.GetFileName()}"); return;
           }
 
           try
           {
             if (string.IsNullOrEmpty(filePath))
             {
-              if (overrideFile)
+              if (overwrite)
               {
                 using (var saveOptions = new DB.SaveOptions() { Compact = compact })
                 {
@@ -88,8 +91,7 @@ namespace RhinoInside.Revit.GH.Components
             }
             else
             {
-              bool isFolder = filePath.Last() == Path.DirectorySeparatorChar;
-              if (isFolder)
+              if (filePath.Last() == Path.DirectorySeparatorChar)
                 filePath = Path.Combine(filePath, familyDoc.Title);
 
               if (Path.IsPathRooted(filePath) && filePath.Contains(Path.DirectorySeparatorChar))
@@ -97,7 +99,7 @@ namespace RhinoInside.Revit.GH.Components
                 if (!Path.HasExtension(filePath))
                   filePath += ".rfa";
 
-                using (var saveAsOptions = new DB.SaveAsOptions() { OverwriteExistingFile = overrideFile, Compact = compact })
+                using (var saveAsOptions = new DB.SaveAsOptions() { OverwriteExistingFile = overwrite, Compact = compact })
                 {
                   if (backups > -1)
                     saveAsOptions.MaximumBackups = backups;

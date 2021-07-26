@@ -94,7 +94,9 @@ namespace RhinoInside.Revit.GH.Components
             }
 
             var path = basePath.AppendElement(index++);
-            if (element?.IsValidObject == true && element.get_BoundingBox(null) != null)
+            geometries.EnsurePath(path);
+
+            if (element.IsValid() && element.get_BoundingBox(null) is object)
             {
               // Extract the geometry
               using (var geometry = element.GetGeometry(options))
@@ -211,7 +213,6 @@ namespace RhinoInside.Revit.GH.Components
           Name = "Detail Level",
           NickName = "DL",
           Description = "View detail level used to extract geometry",
-          Access = GH_ParamAccess.item,
           Optional = true
         }
       ),
@@ -236,7 +237,7 @@ namespace RhinoInside.Revit.GH.Components
           DataMapping = GH_DataMapping.Flatten,
           Optional = true
         },
-        ParamVisibility.Voluntary
+        ParamRelevance.Occasional
       )
     };
 
@@ -252,7 +253,7 @@ namespace RhinoInside.Revit.GH.Components
           Description = "Elements geometry is extracted from",
           Access = GH_ParamAccess.list
         },
-        ParamVisibility.Voluntary
+        ParamRelevance.Occasional
       ),
       new ParamDefinition
       (
@@ -262,8 +263,7 @@ namespace RhinoInside.Revit.GH.Components
           NickName = "G",
           Description = "Element geometry",
           Access = GH_ParamAccess.tree
-        },
-        ParamVisibility.Binding
+        }
       ),
       new ParamDefinition
       (
@@ -274,7 +274,7 @@ namespace RhinoInside.Revit.GH.Components
           Description = "Geometry category",
           Access = GH_ParamAccess.tree
         },
-        ParamVisibility.Voluntary
+        ParamRelevance.Occasional
       ),
       //new ParamDefinition
       //(
@@ -359,7 +359,6 @@ namespace RhinoInside.Revit.GH.Components
           Name = "View",
           NickName = "V",
           Description = "View used to extract geometry",
-          Access = GH_ParamAccess.item
         }
       ),
       new ParamDefinition
@@ -383,7 +382,7 @@ namespace RhinoInside.Revit.GH.Components
           DataMapping = GH_DataMapping.Flatten,
           Optional = true
         },
-        ParamVisibility.Default
+        ParamRelevance.Primary
       ),
     };
 
@@ -399,7 +398,7 @@ namespace RhinoInside.Revit.GH.Components
           Description = "Elements geometry is extracted from",
           Access = GH_ParamAccess.list
         },
-        ParamVisibility.Voluntary
+        ParamRelevance.Occasional
       ),
       new ParamDefinition
       (
@@ -409,8 +408,7 @@ namespace RhinoInside.Revit.GH.Components
           NickName = "G",
           Description = "Element geometry",
           Access = GH_ParamAccess.tree
-        },
-        ParamVisibility.Binding
+        }
       ),
       new ParamDefinition
       (
@@ -421,7 +419,7 @@ namespace RhinoInside.Revit.GH.Components
           Description = "Geometry category",
           Access = GH_ParamAccess.tree
         },
-        ParamVisibility.Default
+        ParamRelevance.Primary
       ),
       //new ParamDefinition
       //(

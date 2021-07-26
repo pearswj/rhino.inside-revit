@@ -8,7 +8,7 @@ using DB = Autodesk.Revit.DB;
 
 namespace RhinoInside.Revit.GH.Parameters
 {
-  public class Category : Element<Types.Category, DB.Category>
+  public class Category : Element<Types.Category, DB.Element>
   {
     public override GH_Exposure Exposure => GH_Exposure.quarternary;
     public override Guid ComponentGuid => new Guid("6722C7A5-EFD3-4119-A7FD-6C8BE892FD04");
@@ -57,7 +57,7 @@ namespace RhinoInside.Revit.GH.Parameters
       categoriesTypeBox.Items.Add("Internal");
       categoriesTypeBox.Items.Add("Analytical");
 
-      if(Current?.Value is DB.Category current)
+      if(PersistentValue?.APIObject is DB.Category current)
       {
         if (current.IsTagCategory)
           categoriesTypeBox.SelectedIndex = 2;
@@ -91,15 +91,15 @@ namespace RhinoInside.Revit.GH.Parameters
       using (var collector = doc.Settings.Categories)
       {
         var categories = collector.
-                          Cast<DB.Category>().
-                          Where(x => 3 == (int) categoryType ? x.IsTagCategory : x.CategoryType == categoryType && !x.IsTagCategory);
+          Cast<DB.Category>().
+          Where(x => 3 == (int) categoryType ? x.IsTagCategory : x.CategoryType == categoryType && !x.IsTagCategory);
 
         listBox.DisplayMember = "DisplayName";
         foreach (var category in categories)
           listBox.Items.Add(Types.Category.FromCategory(category));
       }
 
-      listBox.SelectedIndex = listBox.Items.OfType<Types.Category>().IndexOf(Current, 0).FirstOr(-1);
+      listBox.SelectedIndex = listBox.Items.Cast<Types.Category>().IndexOf(PersistentValue, 0).FirstOr(-1);
       listBox.SelectedIndexChanged += ListBox_SelectedIndexChanged;
     }
 
@@ -111,9 +111,10 @@ namespace RhinoInside.Revit.GH.Parameters
         {
           if (listBox.Items[listBox.SelectedIndex] is Types.Category value)
           {
-            RecordUndoEvent($"Set: {value}");
+            RecordPersistentDataEvent($"Set: {value}");
             PersistentData.Clear();
             PersistentData.Append(value);
+            OnObjectChanged(GH_ObjectEventType.PersistentData);
           }
         }
 

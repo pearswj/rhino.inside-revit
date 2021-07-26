@@ -32,7 +32,7 @@ namespace RhinoInside.Revit.UI
 
     public static void CreateUI(RibbonPanel ribbonPanel)
     {
-      var buttonData = NewPushButtonData<CommandImport, NeedsActiveDocument<AvailableWhenRhinoReady>>
+      var buttonData = NewPushButtonData<CommandImport, NeedsActiveDocument<Availability>>
       (
         name: CommandName,
         iconName: "Ribbon.Rhinoceros.Import-3DM.png",
@@ -409,10 +409,9 @@ namespace RhinoInside.Revit.UI
               var library = DB.DirectShapeLibrary.GetDirectShapeLibrary(doc);
               if (!library.Contains(definitionId))
               {
-                var objectIds = definition.GetObjectIds();
-                var GNodes = objectIds.
-                  Select(x => model.Objects.FindId(x)).
-                  Cast<File3dmObject>().
+                var GNodes = definition.GetObjectIds(). // Get idef object ids
+                  Select(x => model.Objects.FindId(x)). // Find object instance
+                  OfType<File3dmObject>().              // Skip missing objects
                   SelectMany(x => ImportObject(doc, model, x.Geometry, x.Attributes, materials, scaleFactor, Vector3d.Zero, visibleLayersOnly));
 
                 library.AddDefinition(definitionId, GNodes.ToArray());
@@ -446,7 +445,7 @@ namespace RhinoInside.Revit.UI
 
         using (var model = File3dm.Read(filePath))
         {
-          var scaleFactor = RhinoMath.UnitScale(model.Settings.ModelUnitSystem, UnitConverter.HostUnitSystem);
+          var scaleFactor = UnitConverter.ConvertToHostUnits(1.0, model.Settings.ModelUnitSystem);
 
           using (var trans = new DB.Transaction(doc, "Import 3D Model"))
           {
@@ -478,7 +477,7 @@ namespace RhinoInside.Revit.UI
                   }
                   else
                   {
-                    type.SetShape(new DB.GeometryObject[] { });
+                    type.SetShape(new DB.GeometryObject[0]);
                   }
                 }
               }
@@ -567,7 +566,7 @@ namespace RhinoInside.Revit.UI
     {
       using (var model = File3dm.Read(filePath))
       {
-        var scaleFactor = RhinoMath.UnitScale(model.Settings.ModelUnitSystem, UnitConverter.HostUnitSystem);
+        var scaleFactor = UnitConverter.ConvertToHostUnits(1.0, model.Settings.ModelUnitSystem);
         var translationVector = Point3d.Origin - ImportPlacement(model, placement);
 
         using (var trans = new DB.Transaction(doc, "Import 3D Model"))

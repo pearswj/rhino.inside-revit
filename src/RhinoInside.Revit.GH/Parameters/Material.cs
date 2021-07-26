@@ -32,23 +32,27 @@ namespace RhinoInside.Revit.GH.Parameters
 
     protected override void Menu_AppendPromptOne(ToolStripDropDown menu)
     {
-      if (SourceCount != 0)
-        return;
+      if (SourceCount != 0) return;
+      if (Revit.ActiveUIDocument?.Document is null) return;
 
-      var listBox = new ListBox();
-      listBox.BorderStyle = BorderStyle.FixedSingle;
-      listBox.Width = (int) (200 * GH_GraphicsUtil.UiScale);
-      listBox.Height = (int) (100 * GH_GraphicsUtil.UiScale);
+      var listBox = new ListBox
+      {
+        Sorted = true,
+        BorderStyle = BorderStyle.FixedSingle,
+        Width = (int) (200 * GH_GraphicsUtil.UiScale),
+        Height = (int) (100 * GH_GraphicsUtil.UiScale)
+      };
       listBox.SelectedIndexChanged += ListBox_SelectedIndexChanged;
-      listBox.Sorted = true;
 
-      var materialCategoryBox = new ComboBox();
-      materialCategoryBox.DropDownStyle = ComboBoxStyle.DropDownList;
-      materialCategoryBox.Width = (int) (200 * GH_GraphicsUtil.UiScale);
-      materialCategoryBox.Tag = listBox;
+      var materialCategoryBox = new ComboBox
+      {
+        Sorted = true,
+        DropDownStyle = ComboBoxStyle.DropDownList,
+        Width = (int) (200 * GH_GraphicsUtil.UiScale),
+        Tag = listBox
+      };
       materialCategoryBox.SelectedIndexChanged += MaterialCategoryBox_SelectedIndexChanged;
       materialCategoryBox.SetCueBanner("Material class filter…");
-      materialCategoryBox.Sorted = true;
 
       using (var collector = new DB.FilteredElementCollector(Revit.ActiveUIDocument.Document))
       {
@@ -62,7 +66,7 @@ namespace RhinoInside.Revit.GH.Parameters
         foreach(var cat in materials)
           materialCategoryBox.Items.Add(cat.Key);
 
-        if (Current?.Value is DB.Material current)
+        if (PersistentValue?.Value is DB.Material current)
         {
           var familyIndex = 0;
           foreach (var materialClass in materialCategoryBox.Items.Cast<string>())
@@ -110,7 +114,7 @@ namespace RhinoInside.Revit.GH.Parameters
           listBox.Items.Add(new Types.Material(material));
       }
 
-      listBox.SelectedIndex = listBox.Items.OfType<Types.Material>().IndexOf(Current, 0).FirstOr(-1);
+      listBox.SelectedIndex = listBox.Items.Cast<Types.Material>().IndexOf(PersistentValue, 0).FirstOr(-1);
       listBox.SelectedIndexChanged += ListBox_SelectedIndexChanged;
     }
 
@@ -122,9 +126,10 @@ namespace RhinoInside.Revit.GH.Parameters
         {
           if (listBox.Items[listBox.SelectedIndex] is Types.Material value)
           {
-            RecordUndoEvent($"Set: {value}");
+            RecordPersistentDataEvent($"Set: {value}");
             PersistentData.Clear();
             PersistentData.Append(value);
+            OnObjectChanged(GH_ObjectEventType.PersistentData);
           }
         }
 

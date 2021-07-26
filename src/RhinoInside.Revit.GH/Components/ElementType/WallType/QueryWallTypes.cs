@@ -28,7 +28,7 @@ namespace RhinoInside.Revit.GH.Components.Obsolete
     protected override ParamDefinition[] Inputs => inputs;
     static readonly ParamDefinition[] inputs =
     {
-      ParamDefinition.FromParam(new Parameters.Document(), ParamVisibility.Voluntary),
+      new ParamDefinition(new Parameters.Document(), ParamRelevance.Occasional),
       ParamDefinition.Create<Param_String>("Name", "N", "Wall Type name", GH_ParamAccess.item, optional: true),
       ParamDefinition.Create<Parameters.Param_Enum<Types.WallFunction>>("Function", "F", string.Empty, GH_ParamAccess.item, optional: true),
       ParamDefinition.Create<Param_Interval>("Width", "W", string.Empty, GH_ParamAccess.item, optional: true),
@@ -68,7 +68,7 @@ namespace RhinoInside.Revit.GH.Components.Obsolete
         if (filter is object)
           elementCollector = elementCollector.WherePasses(filter);
 
-        if (TryGetFilterStringParam(DB.BuiltInParameter.SYMBOL_NAME_PARAM, ref name, out var nameFilter))
+        if (TryGetFilterStringParam(DB.BuiltInParameter.ALL_MODEL_TYPE_NAME, ref name, out var nameFilter))
           elementCollector = elementCollector.WherePasses(nameFilter);
 
         if (filterFunction)
