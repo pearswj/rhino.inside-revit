@@ -25,3 +25,49 @@ jobs:
       # TODO: sign installer
 
       - run: echo "The build number is ${{ steps.installer.outputs.build_number }}"
+      
+      - name: Rename installer
+        run: |
+          $orig = "RhinoInside.Revit.msi"
+          $new = "RhinoInside.Revit_${{ steps.installer.outputs.build_number }}.msi"
+          cd "src\RhinoInside.Revit.Setup\bin\x64\Release"
+          Write-Host "$orig -> $new"
+          mv "$orig" "$new"
+      
+      - name: Publish installer
+        run: |
+          $url = "https://files.mcneel.com/rhino.inside/revit/dujour/RhinoInside.Revit_${{ steps.installer.outputs.build_number }}.msi"
+          echo "$url"
+
+#           #$filename = "RhinoInside.Revit_%system.build.number%.msi"
+#           #$key = "rhino.inside/revit/dujour/${filename}"
+#           $filename = "%installerFilename%"
+#           $key = "%s3InstallerKey%"
+#           $file = "src\RhinoInside.Revit.Setup\bin\x64\Release\${filename}"
+
+#           #Write-Host "##teamcity[setParameter name='system.DownloadUrl' value='https://files.mcneel.com/${key}']"
+
+#           #Write-Host "Uploading to https://files.mcneel.com/${key}"
+#           Write-Host "Uploading to %system.DownloadUrl%"
+#           Write-S3Object -BucketName %s3Bucket% -File $file -Key $key -CannedACLName public-read
+      
+      - name: Write update.xml
+        run: |
+          $url = "https://files.mcneel.com/rhino.inside/revit/dujour/RhinoInside.Revit_${{ steps.installer.outputs.build_number }}.msi"
+          msbuild script\cibuild.msbuild -t:WriteUpdateXml -p:"Version=${{ steps.installer.outputs.build_number }};DownloadUrl=$url"
+
+#       - name: Before publish
+#         run: |
+#           $version = "%build.number%"
+#           $major = $version.split(".")[0]
+#           Write-Host "Version '$version' has major number: $major"
+#           Write-Host "##teamcity[setParameter name='releaseMajor' value='$major']"
+
+#       - name: Publish update.xml
+#         run: |
+#           $file = "script/update.xml"
+#           #$key = "rhino.inside.revit/updates/1.0/daily.xml"
+#           $key = "%s3UpdateKey%"
+#           $url = "%updateXmlUrl%"
+#           Write-Host "Uploading to $url"
+#           Write-S3Object -BucketName %s3Bucket% -File $file -Key $key -CannedACLName public-read -HeaderCollection @{"Cache-Control" = "no-cache"}
