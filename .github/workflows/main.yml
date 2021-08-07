@@ -20,5 +20,8 @@ jobs:
       # TODO: sign dlls
       
       - run: msbuild script\cibuild.msbuild -t:BuildInstaller
+        id: installer
       
       # TODO: sign installer
+
+      - run: echo "The build number is ${{ steps.installer.outputs.build_number }}"
