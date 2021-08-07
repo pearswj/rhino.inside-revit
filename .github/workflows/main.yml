@@ -9,14 +9,16 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       
-      - uses: actions/setup-dotnet@v1
-        with:
-          dotnet-version: '5.0.x'
+#       - uses: actions/setup-dotnet@v1
+#         with:
+#           dotnet-version: '5.0.x'
 
-      - run: dotnet msbuild script\cibuild.msbuild -t:Compile
+      - uses: microsoft/setup-msbuild@v1
+
+      - run: msbuild script\cibuild.msbuild -t:Compile
       
       # TODO: sign dlls
       
-      - run: dotnet msbuild script\cibuild.msbuild -t:BuildInstaller
+      - run: msbuild script\cibuild.msbuild -t:BuildInstaller
       
       # TODO: sign installer
