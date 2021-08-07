@@ -76,6 +76,8 @@
     <Message Text="BuildVersion = $(BuildVersion)" Importance="high" />
     <!-- Set teamcity build number -->
     <Message Text="##teamcity[buildNumber '$(ProductVersion)']" Importance="high" Condition="$(CI)==true"/>
+    <!-- Set github actions build number -->
+    <Message Text="::set-output name=build_number::$(ProductVersion)" Importance="high" Condition="$(CI)==true"/>
     <!-- Create the WiX preprocessor variables -->
     <CreateProperty Value="$(DefineConstants);ProductVersion=$(ProductVersion)">
       <Output TaskParameter="Value" PropertyName="DefineConstants" />
