@@ -27,6 +27,7 @@ jobs:
       
       - run: msbuild script\cibuild.msbuild -t:BuildInstaller
         id: installer
+        # uses workflow command to output version as "build_number"
       
       # TODO: sign installer
       
@@ -53,9 +54,9 @@ jobs:
           $file = "${{ env.INSTALLER_DIR }}\${filename}"
           $url = "https://files.mcneel.com/${key}"
           
-          Write-Host "::set-output name=download_url::${url}"
+          echo "::set-output name=download_url::${url}"
 
-          Write-Host "Uploading to https://files.mcneel.com/${key}"
+          echo "Uploading to $url"
           aws s3 cp $file s3://${{ env.S3_BUCKET }}/$key --acl public-read
       
       - name: Write update.xml
@@ -65,16 +66,16 @@ jobs:
 
 #       - name: Before publish
 #         run: |
-#           $version = "%build.number%"
+#           $version = "${{ steps.installer.outputs.build_number }}"
 #           $major = $version.split(".")[0]
-#           Write-Host "Version '$version' has major number: $major"
-#           Write-Host "##teamcity[setParameter name='releaseMajor' value='$major']"
+#           echo "Version '$version' has major number: $major"
+#           echo "release_major=%major" >> $GITHUB_ENV
 
-#       - name: Publish update.xml
-#         run: |
-#           $file = "script/update.xml"
-#           #$key = "rhino.inside.revit/updates/1.0/daily.xml"
-#           $key = "%s3UpdateKey%"
-#           $url = "%updateXmlUrl%"
-#           Write-Host "Uploading to $url"
-#           Write-S3Object -BucketName %s3Bucket% -File $file -Key $key -CannedACLName public-read -HeaderCollection @{"Cache-Control" = "no-cache"}
+      - name: Publish update.xml
+        run: |
+          $major = "${{ steps.installer.outputs.build_number }}".split(".")[0]
+          $file = "script/update.xml"
+          $key = "${{ env.S3_UPDATE_PATH }}/${major}/daily.xml"
+          $url = "https://files.mcneel.com/${key}"
+          echo "Uploading to $url"
+          aws s3 cp $file s3://${{ env.S3_BUCKET }}/$key --acl public-read --cache-control no-cache
