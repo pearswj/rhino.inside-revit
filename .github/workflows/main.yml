@@ -5,6 +5,12 @@ on: [push, pull_request]
 jobs:
   build:
     runs-on: windows-latest
+    
+    env:
+      INSTALLER_DIR: src\RhinoInside.Revit.Setup\bin\x64\Release
+      S3_BUCKET: files.na.mcneel.com
+      S3_INSTALLER_PATH: rhino.inside/revit/test/dujour
+      S3_UPDATE_PATH: rhino.inside/revit/test/update
 
     steps:
       - uses: actions/checkout@v2
@@ -23,8 +29,6 @@ jobs:
         id: installer
       
       # TODO: sign installer
-
-      - run: echo "The build number is ${{ steps.installer.outputs.build_number }}"
       
       - name: Rename installer
         run: |
@@ -35,20 +39,17 @@ jobs:
           mv "$orig" "$new"
       
       - name: Publish installer
+        id: publish
         run: |
-          $url = "https://files.mcneel.com/rhino.inside/revit/dujour/RhinoInside.Revit_${{ steps.installer.outputs.build_number }}.msi"
-          echo "$url"
+          $filename = "RhinoInside.Revit_${{ steps.installer.outputs.build_number }}.msi"
+          $key = "${{ env.S3_INSTALLER_PATH }}/${filename}"
+          $file = "${{ env.INSTALLER_DIR }}\${filename}"
+          $url = "https://files.mcneel.com/${key}"
+          
+          Write-Host "::set-output name=download_url::${url}"
 
-#           #$filename = "RhinoInside.Revit_%system.build.number%.msi"
-#           #$key = "rhino.inside/revit/dujour/${filename}"
-#           $filename = "%installerFilename%"
-#           $key = "%s3InstallerKey%"
-#           $file = "src\RhinoInside.Revit.Setup\bin\x64\Release\${filename}"
-
-#           #Write-Host "##teamcity[setParameter name='system.DownloadUrl' value='https://files.mcneel.com/${key}']"
-
-#           #Write-Host "Uploading to https://files.mcneel.com/${key}"
-#           Write-Host "Uploading to %system.DownloadUrl%"
+          Write-Host "Uploading to https://files.mcneel.com/${key}"
+          Write-Host "::warning::S3 upload not implemented yet!
 #           Write-S3Object -BucketName %s3Bucket% -File $file -Key $key -CannedACLName public-read
       
       - name: Write update.xml
