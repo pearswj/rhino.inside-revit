@@ -56,7 +56,7 @@ jobs:
           Write-Host "::set-output name=download_url::${url}"
 
           Write-Host "Uploading to https://files.mcneel.com/${key}"
-          aws s3 cp $file s3://${{ env.S3_BUCKET }}/$key -acl public-read
+          aws s3 cp $file s3://${{ env.S3_BUCKET }}/$key --acl public-read
       
       - name: Write update.xml
         run: |
