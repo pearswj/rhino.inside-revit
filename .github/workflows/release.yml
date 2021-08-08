@@ -63,6 +63,7 @@ jobs:
           echo "::endgroup::"
       - name: Update rhino3d.com download
         run: |
+          $filename = "RhinoInside.Revit_${version}.msi"
           $file = "${{ env.INSTALLER_DIR }}\${filename}"
           $key = "rhino.inside/revit/latest/test/RhinoInside.Revit.msi" # TODO
           $url = "https://files.mcneel.com/${key}"
