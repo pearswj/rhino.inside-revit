@@ -21,11 +21,11 @@ jobs:
 
       - uses: microsoft/setup-msbuild@v1
 
-      - run: msbuild script\cibuild.msbuild -t:Compile
+      - run: msbuild script\cibuild.msbuild -t:Compile -v:m
       
       # TODO: sign dlls
       
-      - run: msbuild script\cibuild.msbuild -t:BuildInstaller
+      - run: msbuild script\cibuild.msbuild -t:BuildInstaller -v:m
         id: installer
         # uses workflow command to output version as "build_number"
       
@@ -56,13 +56,15 @@ jobs:
           
           echo "::set-output name=download_url::${url}"
 
-          echo "Uploading to $url"
+          echo "::group::Uploading to $url"
           aws s3 cp $file s3://${{ env.S3_BUCKET }}/$key --acl public-read
+          echo "::endgroup::"
       
       - name: Write update.xml
         run: |
+          $version = "${{ steps.installer.outputs.build_number }}"
           $url = "${{ steps.publish.outputs.download_url }}"
-          msbuild script\cibuild.msbuild -t:WriteUpdateXml -p:"Version=${{ steps.installer.outputs.build_number }};DownloadUrl=$url"
+          msbuild script\cibuild.msbuild -t:WriteUpdateXml -p:"Version=$version;DownloadUrl=$url"
 
 #       - name: Before publish
 #         run: |
@@ -77,5 +79,7 @@ jobs:
           $file = "script/update.xml"
           $key = "${{ env.S3_UPDATE_PATH }}/${major}/daily.xml"
           $url = "https://files.mcneel.com/${key}"
-          echo "Uploading to $url"
+
+          echo "::group::Uploading to $url"
           aws s3 cp $file s3://${{ env.S3_BUCKET }}/$key --acl public-read --cache-control no-cache
+          echo "::endgroup::"
