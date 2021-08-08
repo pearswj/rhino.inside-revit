@@ -49,7 +49,7 @@ jobs:
           Write-Host "::set-output name=download_url::${url}"
 
           Write-Host "Uploading to https://files.mcneel.com/${key}"
-          Write-Host "::warning::S3 upload not implemented yet!
+          Write-Host "::warning::S3 upload not implemented yet!"
 #           Write-S3Object -BucketName %s3Bucket% -File $file -Key $key -CannedACLName public-read
       
       - name: Write update.xml
