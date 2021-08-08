@@ -38,6 +38,13 @@ jobs:
           Write-Host "$orig -> $new"
           mv "$orig" "$new"
       
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+      
       - name: Publish installer
         id: publish
         run: |
@@ -49,12 +56,11 @@ jobs:
           Write-Host "::set-output name=download_url::${url}"
 
           Write-Host "Uploading to https://files.mcneel.com/${key}"
-          Write-Host "::warning::S3 upload not implemented yet!"
-#           Write-S3Object -BucketName %s3Bucket% -File $file -Key $key -CannedACLName public-read
+          aws s3 cp $file s3://${{ env.S3_BUCKET }}/$key -acl public-read
       
       - name: Write update.xml
         run: |
-          $url = "https://files.mcneel.com/rhino.inside/revit/dujour/RhinoInside.Revit_${{ steps.installer.outputs.build_number }}.msi"
+          $url = "${{ steps.publish.outputs.download_url }}"
           msbuild script\cibuild.msbuild -t:WriteUpdateXml -p:"Version=${{ steps.installer.outputs.build_number }};DownloadUrl=$url"
 
 #       - name: Before publish
