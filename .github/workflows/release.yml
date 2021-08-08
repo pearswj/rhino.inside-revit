@@ -43,6 +43,7 @@ jobs:
             echo "::error::Build does not exist: https://files.mcneel.com/$key"
             exit 1
           }
+      - uses: microsoft/setup-msbuild@v1
       - name: Write update.xml
         run: |
           $version = "${{ github.event.inputs.version }}"
