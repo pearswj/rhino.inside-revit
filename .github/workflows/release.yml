@@ -1,0 +1,71 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: 'Release channel'
+        required: true
+        default: 'stable'
+      version:
+        description: 'Build number'
+        required: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    env:
+      INSTALLER_DIR: src\RhinoInside.Revit.Setup\bin\x64\Release
+      S3_BUCKET: files.na.mcneel.com
+      S3_INSTALLER_PATH: rhino.inside/revit/test/dujour # TODO
+      S3_UPDATE_PATH: rhino.inside/revit/test/update # TODO
+    steps:
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+      - name: Download build
+        run: |
+          $version = "${{ github.event.inputs.version }}"
+          $dir = "${{ env.INSTALLER_DIR }}"
+          mkdir $dir
+          
+          $filename = "RhinoInside.Revit_${version}.msi"
+          $key = "${{ env.S3_INSTALLER_PATH }}/${filename}"
+
+          try {
+              echo "::group::Downloading installer..."
+              aws s3 cp s3://${{ env.S3_BUCKET }}/$key $dir
+              echo "::endgroup::"
+          } catch {
+            echo "::error::Build does not exist: https://files.mcneel.com/$key"
+            exit 1
+          }
+      - name: Write update.xml
+        run: |
+          $version = "${{ github.event.inputs.version }}"
+
+          $url = "https://files.mcneel.com/${{ env.S3_UPDATE_PATH }}/RhinoInside.Revit_${version}.msi"
+          msbuild script\cibuild.msbuild -t:WriteUpdateXml -p:"Version=$version;DownloadUrl=$url"
+      - name: Publish update.xml
+        run: |
+          $channel = "${{ github.event.inputs.channel }}"
+          $major = "${{ github.event.inputs.version }}".split(".")[0]
+          $file = "script/update.xml"
+          $key = "${{ env.S3_UPDATE_PATH }}/${major}/${channel}.xml"
+          $url = "https://files.mcneel.com/${key}"
+          echo "::group::Uploading to $url"
+          aws s3 cp $file s3://${{ env.S3_BUCKET }}/$key --acl public-read --cache-control no-cache
+          echo "::endgroup::"
+      - name: Update rhino3d.com download
+        run: |
+          $file = "${{ env.INSTALLER_DIR }}\${filename}"
+          $key = "rhino.inside/revit/latest/test/RhinoInside.Revit.msi" # TODO
+          $url = "https://files.mcneel.com/${key}"
+
+          echo "::group::Uploading to $url"
+          aws s3 cp $file s3://${{ env.S3_BUCKET }}/$key --acl public-read --cache-control no-cache
+          echo "::endgroup::"
+    
